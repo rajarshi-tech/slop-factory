@@ -54,19 +54,64 @@ def scrape():
     response = request.execute()
 
 
+     # Get all video IDs
+    video_ids = []
+    for item in response["items"]:
+        video_ids.append(item["id"]["videoId"])
+
+
+    # 2. Get statistics for those videos
+    stats_response = youtube.videos().list(
+        part="statistics",
+        id=",".join(video_ids)
+    ).execute()
+
+    # Create a lookup dictionary:
+    # video_id -> statistics
+    statistics = {}
+        
+    for item in stats_response["items"]:
+        statistics[item["id"]] = item["statistics"]
+
     videos = []
 
+    # 3. Combine search data + statistics
     for item in response["items"]:
         video_id = item["id"]["videoId"]
+        snippet = item["snippet"]
+        stats = statistics.get(video_id, {})
 
         videos.append({
-            "title": item["snippet"]["title"],
-            "link": f"https://youtube.com/watch?v={video_id}"
+            "id": video_id,
+
+            "title": snippet["title"],
+
+            "channel": snippet["channelTitle"],
+
+            "link": f"https://youtube.com/watch?v={video_id}",
+
+            # Upload date
+            "published_at": snippet["publishedAt"],
+
+            # View count
+            "view_count": int(stats.get("viewCount", 0)),
+
+            # Optional statistics
+            "like_count": int(stats.get("likeCount", 0)),
+            "comment_count": int(stats.get("commentCount", 0))
         })
 
+    # 4. Save to JSON
+    with open(
+        str(links_dir / "search-results.json"),
+        "w",
+        encoding="utf-8"
+    ) as file:
+        json.dump(
+            videos,
+            file,
+            indent=4,
+            ensure_ascii=False
+        )
 
-    with open(str(links_dir / "search-results.json"), "w", encoding="utf-8") as file:
-        json.dump(videos, file, indent=4, ensure_ascii=False)
-
-    print("links gathered...")
-    return
+    print(f"{len(videos)} videos gathered...")
