@@ -1,31 +1,7 @@
 from app.core.config import YOUTUBE_API_KEY
 from googleapiclient.discovery import build
-from app.utils.storage import youtube_params_dir, youtube_links_dir
+from app.utils.storage import youtube_params_dir, youtube_links_dir, youtube_video_dir
 import json
-
-def parse_video(item, topic):
-    video_id = item["id"]["videoId"]
-
-    return {
-        "id": video_id,
-
-        "topic": {
-            "name": topic,
-            "query": topic
-        },
-
-        "youtube": {
-            "title": item["snippet"]["title"],
-            "channel": item["snippet"]["channelTitle"],
-            "link": f"https://youtube.com/watch?v={video_id}",
-            "published_at": item["snippet"]["publishedAt"]
-        },
-
-        "pipeline": {
-            "downloaded": False,
-            "processed": False
-        }
-    }
 
 def scrape():
     params_dir = youtube_params_dir()
@@ -40,27 +16,40 @@ def scrape():
         developerKey=YOUTUBE_API_KEY
     )
 
-    request = youtube.search().list(
-        part="snippet",
-        q=params["q"],
-        type="video",
-        order=params["order"],
-        maxResults=params["maxResults"],
-        videoDuration=params["videoDuration"],
-        videoCaption=params["videoCaption"],
-        videoLicense=params["videoLicense"]
-    )
+    request_params = {
+        "part": "snippet",
+        "q": params["q"],
+        "type": "video",
+        "order": params["order"],
+        "maxResults": int(params["maxResults"]),
+        "videoDuration": params["videoDuration"],
+        "videoCaption": params["videoCaption"],
+        "videoLicense": params["videoLicense"]
+    }
+
+    if params.get("publishedAfter"):
+        request_params["publishedAfter"] = params["publishedAfter"]
+
+    if params.get("publishedBefore"):
+        request_params["publishedBefore"] = params["publishedBefore"]
+
+
+
+    # get video links
+    request = youtube.search().list(**request_params)
 
     response = request.execute()
 
 
-     # Get all video IDs
+     # get all video IDs and channel IDs
     video_ids = []
+    channel_ids = []
     for item in response["items"]:
         video_ids.append(item["id"]["videoId"])
+        channel_ids.append(item["snippet"]["channelId"])
 
 
-    # 2. Get statistics for those videos
+    # get statistics for videos
     stats_response = youtube.videos().list(
         part="statistics",
         id=",".join(video_ids)
@@ -73,13 +62,31 @@ def scrape():
     for item in stats_response["items"]:
         statistics[item["id"]] = item["statistics"]
 
+
+    # Create a lookup dictionary:
+    # channel_id -> channel_response
+    channel_response = youtube.channels().list(
+        part="statistics",
+        id=",".join(channel_ids)
+    ).execute()
+
+    channel_statistics = {}
+
+    for item in channel_response["items"]:
+        channel_statistics[item["id"]] = item["statistics"]
+
     videos = []
 
+
+    
     # 3. Combine search data + statistics
     for item in response["items"]:
+
         video_id = item["id"]["videoId"]
         snippet = item["snippet"]
         stats = statistics.get(video_id, {})
+        channel_id = snippet["channelId"]
+        channel_stats = channel_statistics.get(channel_id, {})
 
         videos.append({
             "id": video_id,
@@ -88,18 +95,68 @@ def scrape():
 
             "channel": snippet["channelTitle"],
 
+            "channel_id": channel_id,
+
+            "subscriber_count": int(
+                channel_stats.get("subscriberCount", 0)
+            ),
+
             "link": f"https://youtube.com/watch?v={video_id}",
 
-            # Upload date
             "published_at": snippet["publishedAt"],
 
-            # View count
             "view_count": int(stats.get("viewCount", 0)),
 
-            # Optional statistics
             "like_count": int(stats.get("likeCount", 0)),
+
             "comment_count": int(stats.get("commentCount", 0))
         })
+
+        metadata = {
+
+            "id": video_id,
+
+            "title": snippet["title"],
+
+            "channel": {
+
+                "name": snippet["channelTitle"],
+
+                "id": channel_id,
+
+                "subscriber_count": int(
+                    channel_stats.get("subscriberCount", 0)
+                ),
+
+            },
+
+    
+            "url": f"https://youtube.com/watch?v={video_id}",
+
+            "published_at": snippet["publishedAt"],
+
+            "statistics" : {
+                    
+                "views": int(stats.get("viewCount", 0)),
+
+                "likes": int(stats.get("likeCount", 0)),
+
+                "comments": int(stats.get("commentCount", 0))
+
+            },
+
+            "pipeline" : {
+                "downloaded": False,
+                "transcript-analysed": False,
+                "clips-processed": False
+            }
+
+        }
+
+        video_dir = youtube_video_dir(video_id)
+
+        with open(str(video_dir / "metadata.json"), "w", encoding="utf-8") as file:
+            json.dump(metadata, file)
 
     # 4. Save to JSON
     with open(

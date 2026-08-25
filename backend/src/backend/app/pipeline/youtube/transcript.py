@@ -1,8 +1,7 @@
 import re
 import json
 import ollama
-from app.utils.storage import 
-
+from app.utils.storage import youtube_video_dir
 
 def timestamp_to_seconds(timestamp):
     """
@@ -75,51 +74,57 @@ def vtt_to_json(vtt_file):
     return subtitles
 
 
-# Convert VTT
-transcript_json = vtt_to_json("video.en.vtt")
+def generateTimestamps(id):
+    video_dir = youtube_video_dir(id)
+
+    with open(str(video_dir / "metadata.json"), "r", encoding="utf-8") as file:
+        metadata = json.load(file)
+    
+
+    # Convert VTT
+    transcript_json = vtt_to_json(str(metadata["title"] + ".en.vtt"))
 
 
-# Send to Ollama
-prompt = f"""
-You are an AI video editor.
+    # Send to Ollama
+    prompt = f"""
+    You are an AI video editor.
 
-Analyze this transcript and find the best standalone clips.
+    Analyze this transcript and find the best standalone clips.
 
-Rules:
-- Each clip should have a complete idea.
-- Prefer interesting, surprising, educational, or entertaining moments.
-- Do not cut in the middle of a sentence.
-- Return ONLY valid JSON.
+    Rules:
+    - Each clip should have a complete idea.
+    - Prefer interesting, surprising, educational, or entertaining moments.
+    - Do not cut in the middle of a sentence.
+    - Return ONLY valid JSON.
 
-Return format:
+    Return format:
 
-[
-  {{
-    "start": number,
-    "end": number,
-    "title": "short clip title",
-    "reason": "why this clip works"
-  }}
-]
-
-Transcript:
-
-{json.dumps(transcript_json, indent=2)}
-"""
-
-
-response = ollama.chat(
-    model="gemma4:12b",
-    messages=[
-        {
-            "role": "user",
-            "content": prompt
-        }
+    [
+    {{
+        "start": number,
+        "end": number,
+        "title": "short clip title",
+        "reason": "why this clip works"
+    }}
     ]
-)
 
-output = response["message"]["content"]
+    Transcript:
 
-f = open('output.txt', 'w')
-f.write(output)
-f.close()
+    {json.dumps(transcript_json, indent=2)}
+    """
+
+
+    response = ollama.chat(
+        model="gemma4:12b",
+        messages=[
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ]
+    )
+
+    output = response["message"]["content"]
+
+    with open(str(video_dir / "clipTimestamps.json"), "w", encoding="utf-8") as file:
+        json.dump(output, file, indent=4, ensure_ascii=False)

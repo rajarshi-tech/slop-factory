@@ -1,8 +1,8 @@
 {
     "q": "AI news",
     "order": "viewCount",
-    "publishedAfter": "2026-08-23T00:00:00Z",
-    "publishedBefore": "2026-08-23T00:00:00Z",
+    "publishedAfter": null,
+    "publishedBefore": null,
     "maxResults": "50",
     "videoDuration": "medium",
     "videoCaption": "closedCaption",

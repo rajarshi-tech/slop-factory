@@ -1,61 +1,45 @@
 import yt_dlp
-from app.utils.storage import youtube_raw_dir 
-from app.utils.storage import youtube_links_dir
+from app.utils.storage import youtube_video_dir 
 import json
 
-def download():
-    links_dir = youtube_links_dir()
+def download(url):
 
-    with open(str(links_dir / "ranked-videos.json"), "r", encoding="utf-8") as file:
-        ranked_links = json.load(file)
+    with yt_dlp.YoutubeDL({"quiet": True}) as ydl:
+        info = ydl.extract_info(url, download=False)
+        video_id = info["id"]
 
-    for ranked_link in ranked_links:
-        url = ranked_link["link"]
+    output_dir = youtube_video_dir(video_id)
 
-        choice = input("download " + url + " [y/n]")
-        if choice == 'n':
-            continue
-        elif choice == 'y':
-            print("downloading video...")     
+    options = {
+        # Download best quality video + audio
+        "format": "bestvideo+bestaudio/best",
 
-        with yt_dlp.YoutubeDL({"quiet": True}) as ydl:
-            info = ydl.extract_info(url, download=False)
-            video_id = info["id"]
+        # Merge video and audio
+        "merge_output_format": "mp4",
 
-        output_dir = youtube_raw_dir(video_id)
+        # Download subtitles
+        "writesubtitles": True,
 
-        options = {
-            # Download best quality video + audio
-            "format": "bestvideo+bestaudio/best",
+        # Download auto-generated subtitles if no manual subtitles exist
+        "writeautomaticsub": True,
 
-            # Merge video and audio
-            "merge_output_format": "mp4",
+        # Subtitle languages
+        "subtitleslangs": ["en"],
 
-            # Download subtitles
-            "writesubtitles": True,
+        # Convert subtitles to .srt
+        "convertsubs": "srt",
 
-            # Download auto-generated subtitles if no manual subtitles exist
-            "writeautomaticsub": True,
+        # Output filename
+        "outtmpl": str(output_dir / "%(title)s.%(ext)s"),
 
-            # Subtitle languages
-            "subtitleslangs": ["en"],
+        # Keep metadata
+        "addmetadata": True,
 
-            # Convert subtitles to .srt
-            "convertsubs": "srt",
+        # Avoid playlist downloads
+        "noplaylist": True,
+    }
 
-            # Output filename
-            "outtmpl": str(output_dir / "%(title)s.%(ext)s"),
+    with yt_dlp.YoutubeDL(options) as ydl: # type: ignore
+        ydl.download([url])
 
-            # Keep metadata
-            "addmetadata": True,
-
-            # Avoid playlist downloads
-            "noplaylist": True,
-        }
-
-        with yt_dlp.YoutubeDL(options) as ydl: # pyright: ignore[reportArgumentType]
-            ydl.download([url])
-
-        print(f"Files saved to: {output_dir}")
-
-    print("all downloads complete...")
+    print(f"Files saved to: {output_dir}")
