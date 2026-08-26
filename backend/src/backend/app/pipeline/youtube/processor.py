@@ -19,11 +19,12 @@ def generateClips(id):
 
 
     for i, clip in enumerate(clips, start=1):
-        start = clip["start"]
-        end = clip["end"]
+        start = float(clip["start"])
+        end = float(clip["end"])
         title = sanitize_filename(clip["title"])
 
         output_dir = video_dir / "clips"
+        output_dir.mkdir(parents=True, exist_ok=True)
 
         output = os.path.join(
             output_dir,

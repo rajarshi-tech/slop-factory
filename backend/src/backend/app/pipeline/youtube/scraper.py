@@ -2,6 +2,7 @@ from app.core.config import YOUTUBE_API_KEY
 from googleapiclient.discovery import build
 from app.utils.storage import youtube_params_dir, youtube_links_dir, youtube_video_dir
 import json
+import isodate
 
 def scrape():
     params_dir = youtube_params_dir()
@@ -63,6 +64,22 @@ def scrape():
         statistics[item["id"]] = item["statistics"]
 
 
+    #get content details for videos
+    details_response = youtube.videos().list(
+        part="contentDetails",
+        id=",".join(video_ids)
+    ).execute()
+
+    # Create a lookup dictionary:
+    # video_id -> content details
+    details = {}
+
+    for item in details_response["items"]:
+        details[item["id"]] = isodate.parse_duration(
+            item["contentDetails"]["duration"]
+        ).total_seconds()
+
+
     # Create a lookup dictionary:
     # channel_id -> channel_response
     channel_response = youtube.channels().list(
@@ -85,6 +102,7 @@ def scrape():
         video_id = item["id"]["videoId"]
         snippet = item["snippet"]
         stats = statistics.get(video_id, {})
+        deets = details.get(video_id, 0)
         channel_id = snippet["channelId"]
         channel_stats = channel_statistics.get(channel_id, {})
 
@@ -143,6 +161,10 @@ def scrape():
 
                 "comments": int(stats.get("commentCount", 0))
 
+            },
+
+            "details" : {
+                "duration": float(deets)
             },
 
             "pipeline" : {

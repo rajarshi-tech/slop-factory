@@ -26,9 +26,6 @@ def download(url):
         # Subtitle languages
         "subtitleslangs": ["en"],
 
-        # Convert subtitles to .srt
-        "convertsubtitles": "srt",
-
         # Output filename
         "outtmpl": str(output_dir / f"{video_id}.%(ext)s"),
 

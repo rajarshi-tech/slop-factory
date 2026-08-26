@@ -3,27 +3,37 @@ import json
 import ollama
 from app.utils.storage import youtube_video_dir
 
-def srt_to_json(srt_file):
-    with open(srt_file, "r", encoding="utf-8") as f:
+def vtt_to_json(vtt_file):
+    with open(vtt_file, "r", encoding="utf-8") as f:
         content = f.read()
+
+    # Remove WEBVTT header
+    content = re.sub(
+        r"^WEBVTT.*?\n",
+        "",
+        content,
+        count=1
+    )
 
     subtitles = []
 
-    # Split subtitle blocks
     blocks = re.split(r"\n\n+", content.strip())
 
     for block in blocks:
         lines = block.splitlines()
-
-        if len(lines) < 2:
-            continue
 
         timestamp = None
         text_lines = []
 
         for line in lines:
             if "-->" in line:
-                timestamp = line
+                parts = line.split("-->")
+                timestamp = (
+                    parts[0].strip()
+                    + " --> "
+                    + parts[1].strip().split()[0]
+                )
+
             elif timestamp:
                 text_lines.append(line)
 
@@ -35,7 +45,7 @@ def srt_to_json(srt_file):
 
             text = " ".join(text_lines)
 
-            # Remove SRT formatting tags
+            # Remove VTT formatting
             text = re.sub(r"<[^>]+>", "", text)
 
             subtitles.append({
@@ -46,67 +56,158 @@ def srt_to_json(srt_file):
 
     return subtitles
 
-
 def timestamp_to_seconds(timestamp):
-    # Handles SRT format: HH:MM:SS,mmm
+    # Remove VTT settings like align:start, position:0%
+    timestamp = timestamp.split()[0]
+
     timestamp = timestamp.replace(",", ".")
 
-    hours, minutes, seconds = timestamp.split(":")
-    
+    parts = timestamp.split(":")
+
+    if len(parts) == 3:
+        hours, minutes, seconds = parts
+    elif len(parts) == 2:
+        hours = 0
+        minutes, seconds = parts
+    else:
+        raise ValueError(f"Invalid timestamp: {timestamp}")
+
     return (
         int(hours) * 3600
         + int(minutes) * 60
         + float(seconds)
     )
 
+def chunk_transcript(transcript, chunk_size=100):
+    chunks = []
+
+    for i in range(0, len(transcript), chunk_size):
+        chunks.append(transcript[i:i + chunk_size])
+
+    # Merge last chunk if it is too small
+    if len(chunks) > 1 and len(chunks[-1]) < 50:
+        chunks[-2].extend(chunks[-1])
+        chunks.pop()
+
+    return chunks
+
+
 def generateTimestamps(id):
     video_dir = youtube_video_dir(id)
 
-    srt_path = video_dir / (id + ".en.srt")
+    vtt_path = video_dir / (id + ".en.vtt")
+    transcript_json = vtt_to_json(vtt_path)
 
-    transcript_json = srt_to_json(srt_path)
+    chunks = chunk_transcript(transcript_json)
 
+    all_timestamps = []
 
-    # Send to Ollama
-    prompt = f"""
-    You are an AI video editor.
+    for index, chunk in enumerate(chunks):
+        print(f"Processing chunk {index + 1}/{len(chunks)}")
 
-    Analyze this transcript and find the best standalone clips.
+        prompt = f"""
+        You are an AI video editor.
 
-    Rules:
-    - Each clip should have a complete idea.
-    - Prefer interesting, surprising, educational, or entertaining moments.
-    - Do not cut in the middle of a sentence.
-    - Return ONLY valid JSON.
+        Analyze this transcript segment and find the best standalone video clips.
 
-    Return format:
+        Rules:
+        - Each clip should contain a complete idea or valuable moment.
+        - Prefer interesting, surprising, educational, entertaining, or highly engaging moments.
+        - Do not cut in the middle of a sentence.
+        - Do not create clips from incomplete thoughts, introductions, greetings, filler, or contextless fragments.
+        - If this transcript segment is too short, lacks enough context, or does not contain a meaningful standalone moment, return an empty JSON array [].
+        - Only return clips that would make sense when viewed independently from the original video.
+        - Do not force a clip selection just to return something.
+        - Return ONLY valid JSON.
+        - Do not include markdown, explanations, or additional text.
 
-    [
-    {{
-        "start": number,
-        "end": number,
-        "title": "short clip title",
-        "reason": "why this clip works"
-    }}
-    ]
+        Return format exactly:
 
-    Transcript:
-
-    {json.dumps(transcript_json, indent=2)}
-    """
-
-
-    response = ollama.chat(
-        model="gemma4:12b",
-        messages=[
-            {
-                "role": "user",
-                "content": prompt
-            }
+        [
+        {{
+            "start": 123.45,
+            "end": 150.75,
+            "title": "Example title",
+            "reason": "Example reason"
+        }}
         ]
-    )
 
-    output = response["message"]["content"]
+        The array elements must be objects. Never return a list of keys or strings.
+        If there are no suitable clips, return exactly:
+        []
 
-    with open(str(video_dir / "clipTimestamps.json"), "w", encoding="utf-8") as file:
-        json.dump(output, file, indent=4, ensure_ascii=False)
+        Transcript:
+
+        {json.dumps(chunk, indent=2)}
+        """
+
+        clip_schema = {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "start": {
+                        "type": "number"
+                    },
+                    "end": {
+                        "type": "number"
+                    },
+                    "title": {
+                        "type": "string"
+                    },
+                    "reason": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "start",
+                    "end",
+                    "title",
+                    "reason"
+                ]
+            }
+        }
+
+        response = ollama.chat(
+            model="qwen2.5:7b",
+            messages=[
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            format=clip_schema
+        )
+
+        output = response["message"]["content"]
+
+        try:
+            parsed_output = json.loads(output)
+            if (
+                isinstance(parsed_output, list)
+                and all(
+                    isinstance(item, dict)
+                    and "start" in item
+                    and "end" in item
+                    for item in parsed_output
+                )
+            ):
+                all_timestamps.extend(parsed_output)
+            else:
+                print(f"Invalid response from chunk {index+1}")
+
+        except json.JSONDecodeError:
+            print(f"Failed parsing chunk {index + 1}")
+            print(output)
+
+    with open(
+        str(video_dir / "clipTimestamps.json"),
+        "w",
+        encoding="utf-8"
+    ) as file:
+        json.dump(
+            all_timestamps,
+            file,
+            indent=4,
+            ensure_ascii=False
+        )
