@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 import os
 
 
-ROOT_DIR = Path(__file__).resolve().parents[4]
+ROOT_DIR = Path(__file__).resolve().parents[5]
 
 load_dotenv(ROOT_DIR / ".env")
 

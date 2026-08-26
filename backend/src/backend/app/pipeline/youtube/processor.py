@@ -8,18 +8,14 @@ def sanitize_filename(name):
     # Remove invalid Windows filename characters
     return re.sub(r'[<>:"/\\|?*]', '', name)
 
-def generate_clips(id):
+def generateClips(id):
 
     video_dir = youtube_video_dir(id)
-    
+
     with open(str(video_dir / "clipTimestamps.json"), "r", encoding="utf-8") as f:
         clips = json.load(f)
 
-
-    with open(str(video_dir / "metadata.json"), "r", encoding="utf-8") as f:
-        metadata = json.load(f)
-
-    video_file = video_dir / metadata["title"] + ".mp4"
+    video_file = video_dir / (id + ".mp4")
 
 
     for i, clip in enumerate(clips, start=1):

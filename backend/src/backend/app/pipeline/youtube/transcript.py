@@ -3,47 +3,20 @@ import json
 import ollama
 from app.utils.storage import youtube_video_dir
 
-def timestamp_to_seconds(timestamp):
-    """
-    Convert VTT timestamp:
-    00:01:23.500 -> 83.5 seconds
-    """
-    parts = timestamp.split(":")
-
-    if len(parts) == 3:
-        hours, minutes, seconds = parts
-        return (
-            int(hours) * 3600
-            + int(minutes) * 60
-            + float(seconds)
-        )
-
-    elif len(parts) == 2:
-        minutes, seconds = parts
-        return (
-            int(minutes) * 60
-            + float(seconds)
-        )
-
-
-def vtt_to_json(vtt_file):
-    with open(vtt_file, "r", encoding="utf-8") as f:
+def srt_to_json(srt_file):
+    with open(srt_file, "r", encoding="utf-8") as f:
         content = f.read()
-
-    # Remove WEBVTT header
-    content = re.sub(
-        r"^WEBVTT.*?\n\n",
-        "",
-        content,
-        flags=re.DOTALL
-    )
 
     subtitles = []
 
+    # Split subtitle blocks
     blocks = re.split(r"\n\n+", content.strip())
 
     for block in blocks:
         lines = block.splitlines()
+
+        if len(lines) < 2:
+            continue
 
         timestamp = None
         text_lines = []
@@ -62,7 +35,7 @@ def vtt_to_json(vtt_file):
 
             text = " ".join(text_lines)
 
-            # Remove VTT formatting
+            # Remove SRT formatting tags
             text = re.sub(r"<[^>]+>", "", text)
 
             subtitles.append({
@@ -74,15 +47,24 @@ def vtt_to_json(vtt_file):
     return subtitles
 
 
+def timestamp_to_seconds(timestamp):
+    # Handles SRT format: HH:MM:SS,mmm
+    timestamp = timestamp.replace(",", ".")
+
+    hours, minutes, seconds = timestamp.split(":")
+    
+    return (
+        int(hours) * 3600
+        + int(minutes) * 60
+        + float(seconds)
+    )
+
 def generateTimestamps(id):
     video_dir = youtube_video_dir(id)
 
-    with open(str(video_dir / "metadata.json"), "r", encoding="utf-8") as file:
-        metadata = json.load(file)
-    
+    srt_path = video_dir / (id + ".en.srt")
 
-    # Convert VTT
-    transcript_json = vtt_to_json(str(metadata["title"] + ".en.vtt"))
+    transcript_json = srt_to_json(srt_path)
 
 
     # Send to Ollama

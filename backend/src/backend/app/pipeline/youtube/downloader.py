@@ -27,10 +27,10 @@ def download(url):
         "subtitleslangs": ["en"],
 
         # Convert subtitles to .srt
-        "convertsubs": "srt",
+        "convertsubtitles": "srt",
 
         # Output filename
-        "outtmpl": str(output_dir / "%(title)s.%(ext)s"),
+        "outtmpl": str(output_dir / f"{video_id}.%(ext)s"),
 
         # Keep metadata
         "addmetadata": True,
