@@ -1,9 +1,4 @@
 stuff to do:
-make video and subtitle filename id.ext not title.ext
-
-convertsubtitles npt convert subs on ytdlp options, directly download as srt, no need for conversion. remove en vvt conversion
-
-filename error while saving,fix it so file is not found
 
 add video cropping for short form
 
