@@ -33,7 +33,7 @@ def pipeline():
         with open(str(video_dir / "metadata.json"), "r", encoding="utf-8") as file:
             metadata = json.load(file)
 
-        print("Title: " + metadata["title"] + "\nTrend score: " +  str(metadata["trend_score"]))
+        print("Title: " + metadata["title"] + "\nTrend score: " +  str(metadata["trend_score"]) + "\nVideo length: " + str(metadata["details"]["duration"]))
         choice = input("Process video? [y/n] ")
 
         if choice in "yY":
@@ -50,7 +50,7 @@ def pipeline():
                 print("generating timestamps...")
                 generateTimestamps(video["video_id"])
 
-            ch = input("download video? [y/n]")
+            ch = input("generate clips? [y/n]")
                         
             if ch in 'yY': 
                 print("generating clips...")

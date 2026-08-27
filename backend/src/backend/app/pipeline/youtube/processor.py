@@ -36,19 +36,40 @@ def generateClips(id):
         command = [
             "ffmpeg",
             "-y",
-            "-ss", str(start),
             "-i", video_file,
+            "-ss", str(start),
             "-t", str(duration),
 
-            # Re-encode for accurate cuts
+            "-filter_complex",
+            (
+                # Background: enlarged original, cropped to fill 9:16, then blurred
+                "[0:v]"
+                "scale=1080:1920:force_original_aspect_ratio=increase,"
+                "crop=1080:1920,"
+                "boxblur=20:10"
+                "[bg];"
+
+                # Foreground: center crop to 4:5, then fill entire width
+                "[0:v]"
+                "crop=ih*4/5:ih:(iw-ih*4/5)/2:0,"
+                "scale=1080:1350"
+                "[fg];"
+
+                # Center foreground vertically
+                "[bg][fg]"
+                "overlay=0:(H-h)/2"
+                "[v]"
+            ),
+
+            "-map", "[v]",
+            "-map", "0:a?",
+
             "-c:v", "libx264",
             "-c:a", "aac",
-
             "-preset", "fast",
 
             output
         ]
-
         print(f"Creating: {output}")
 
         subprocess.run(
