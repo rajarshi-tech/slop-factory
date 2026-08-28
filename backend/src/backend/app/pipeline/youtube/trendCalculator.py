@@ -26,7 +26,7 @@ def calculateRank(view_count, age_hours, like_count, comment_count, subscriber_c
         comment_rate = comment_count / view_count
         subscriber_velocity = view_count / subscriber_count
         
-        engagement =  (0.5 * like_rate + 0.3 * comment_rate + 0.3 * subscriber_velocity)
+        engagement =  (0.5 * like_rate + 0.3 * comment_rate + 0.2 * subscriber_velocity)
 
         trend_score = math.log(velocity + 1) * engagement
 
@@ -46,6 +46,8 @@ def generateList(searchResults):
 
     links = []
 
+    trend_scores =[]
+
     for item in searchResults:
 
         link = item["link"]
@@ -60,6 +62,8 @@ def generateList(searchResults):
         age_hours = calculateAgeHours(item["published_at"])
 
         trend_score = calculateRank(view_count, age_hours, like_count, comment_count, subscriber_count)
+        
+        trend_scores.append(trend_score)
 
         updateMetadata(video_id, trend_score)
 

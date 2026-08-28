@@ -12,6 +12,14 @@ def generateClips(id):
 
     video_dir = youtube_video_dir(id)
 
+    with open(str(video_dir / "metadata.json"), "r", encoding="utf-8") as f:
+        metadata = json.load(f)
+        
+    if metadata["pipeline"]["clips-processed"] == True:
+        print("clips already made")
+        return
+
+    
     with open(str(video_dir / "clipTimestamps.json"), "r", encoding="utf-8") as f:
         clips = json.load(f)
 
@@ -80,3 +88,5 @@ def generateClips(id):
 
 
     print("All clips created.")
+
+    metadata["pipeline"]["clips-processed"] = True
