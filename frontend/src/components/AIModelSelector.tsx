@@ -1,31 +1,85 @@
-import React, { useState, type ChangeEvent, type FormEvent } from 'react';
+import axios from "axios";
+import React, { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
 
-// Define explicit types for provider-model mappings
-type Provider = 'Ollama' | 'Google';
+// Interfaces matching your config response shape
+interface ProviderDetail {
+  models: string[];
+}
 
-const PROVIDER_MODELS: Record<Provider, string[]> = {
-  Ollama: [],
-  Google: ['gemini-1.5-pro', 'gemini-1.5-flash', 'gemini-1.0-ultra'],
-};
+export interface ConfigResponse {
+  details: {
+    llm: {
+      provider: Record<string, ProviderDetail>;
+    };
+  };
+  llm: {
+    provider: string;
+    model: string;
+  };
+}
 
 interface FormState {
-  provider: Provider | '';
+  provider: string;
   model: string;
 }
 
-export const ModelSelectorForm: React.FC = () => {
-  const [formData, setFormData] = useState<FormState>({
-    provider: '',
-    model: '',
-  });
+// API Helpers
+const fetchConfig = async (): Promise<ConfigResponse> => {
+  const response = await axios.get<ConfigResponse>("/api/config");
+  return response.data;
+};
 
-  const providers = Object.keys(PROVIDER_MODELS) as Provider[];
+const updateConfig = async (payload: FormState): Promise<ConfigResponse> => {
+  const response = await axios.put<ConfigResponse>("/api/config", payload);
+  return response.data;
+};
+
+export const AIModelSelector: React.FC = () => {
+  const [providerModels, setProviderModels] = useState<Record<string, string[]>>({});
+  const [formData, setFormData] = useState<FormState>({ provider: "", model: "" });
+  
+  const [loading, setLoading] = useState<boolean>(true);
+  const [submitting, setSubmitting] = useState<boolean>(false);
+  const [fullConfig, setFullConfig] = useState<ConfigResponse | null>(null);
+
+  // Helper to parse response and sync component state
+  const syncConfigData = (data: ConfigResponse) => {
+    const parsedModels: Record<string, string[]> = {};
+    Object.entries(data.details.llm.provider).forEach(([name, info]) => {
+      parsedModels[name] = info.models;
+    });
+
+    setProviderModels(parsedModels);
+    setFullConfig(data);
+    setFormData({
+      provider: data.llm.provider || "",
+      model: data.llm.model || "",
+    });
+  };
+
+  // Initial fetch on mount
+  useEffect(() => {
+    const loadInitialConfig = async () => {
+      try {
+        const data = await fetchConfig();
+        syncConfigData(data);
+      } catch (error) {
+        console.error("Failed to fetch initial config:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadInitialConfig();
+  }, []);
 
   const handleProviderChange = (e: ChangeEvent<HTMLSelectElement>) => {
-    const provider = e.target.value as Provider;
+    const selectedProvider = e.target.value;
+    const availableModels = providerModels[selectedProvider] || [];
+
     setFormData({
-      provider,
-      model: '', // Reset model selection when provider changes
+      provider: selectedProvider,
+      model: availableModels[0] || "",
     });
   };
 
@@ -36,86 +90,78 @@ export const ModelSelectorForm: React.FC = () => {
     }));
   };
 
-  const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!formData.provider || !formData.model) return;
-    
-    console.log('Selected Configuration:', formData);
+
+    setSubmitting(true);
+    try {
+      // Execute PUT request and receive updated full config
+      const updatedConfig = await updateConfig(formData);
+      
+      // Update local state with returned backend state
+      syncConfigData(updatedConfig);
+      
+      console.log("Entire updated config from backend:", updatedConfig);
+    } catch (error) {
+      console.error("Failed to update config:", error);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4">
-      <form
-        onSubmit={handleSubmit}
-        className="w-full max-w-md rounded-xl border border-gray-100 bg-white p-6 shadow-lg space-y-5"
-      >
-        <h2 className="text-xl font-semibold text-gray-800 text-center">
-          Model Configuration
-        </h2>
+  if (loading) return <div>Loading model configuration...</div>;
 
-        {/* Provider Dropdown */}
-        <div className="flex flex-col space-y-1.5">
-          <label
-            htmlFor="provider-select"
-            className="text-sm font-medium text-gray-700"
-          >
-            Provider
-          </label>
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem", maxWidth: "400px" }}>
+      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+        <div>
+          <label htmlFor="provider-select">Provider: </label>
           <select
             id="provider-select"
             value={formData.provider}
             onChange={handleProviderChange}
-            className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 shadow-sm transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+            disabled={submitting}
           >
-            <option value="" disabled>
-              Select Provider
-            </option>
-            {providers.map((provider) => (
-              <option key={provider} value={provider}>
-                {provider}
+            <option value="">Select Provider</option>
+            {Object.keys(providerModels).map((p) => (
+              <option key={p} value={p}>
+                {p}
               </option>
             ))}
           </select>
         </div>
 
-        {/* Model Dropdown */}
-        <div className="flex flex-col space-y-1.5">
-          <label
-            htmlFor="model-select"
-            className="text-sm font-medium text-gray-700"
-          >
-            Model
-          </label>
+        <div>
+          <label htmlFor="model-select">Model: </label>
           <select
             id="model-select"
             value={formData.model}
             onChange={handleModelChange}
-            disabled={!formData.provider}
-            className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 shadow-sm transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
+            disabled={!formData.provider || submitting}
           >
-            <option value="" disabled>
-              {formData.provider ? 'Select Model' : 'Select a provider first'}
-            </option>
-            {formData.provider &&
-              PROVIDER_MODELS[formData.provider].map((model) => (
-                <option key={model} value={model}>
-                  {model}
-                </option>
-              ))}
+            <option value="">Select Model</option>
+            {(providerModels[formData.provider] || []).map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
           </select>
         </div>
 
-        {/* Submit Button */}
-        <button
-          type="submit"
-          disabled={!formData.provider || !formData.model}
-          className="w-full rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 disabled:cursor-not-allowed disabled:bg-indigo-300"
-        >
-          Submit Selection
+        <button type="submit" disabled={!formData.provider || !formData.model || submitting}>
+          {submitting ? "Saving..." : "Save Selection"}
         </button>
       </form>
+
+      {/* Render returned full config file preview */}
+      {fullConfig && (
+        <pre style={{ background: "#f4f4f4", padding: "1rem", borderRadius: "4px", fontSize: "12px" }}>
+          {JSON.stringify(fullConfig, null, 2)}
+        </pre>
+      )}
     </div>
   );
 };
 
-export default ModelSelectorForm;
+export default AIModelSelector;

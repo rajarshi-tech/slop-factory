@@ -14,13 +14,14 @@ dependencies = [
     "torchaudio==2.8.0+cu128",
     "torchvision==0.23.0+cu128",
     "yt-dlp[default]>=2026.8.19",
-    "fastapi>=0.141.1",
+    "fastapi[standard]>=0.141.1",
     "uvicorn[standard]>=0.52.4",
     "google-genai>=2.20.0",
 ]
 
 [project.scripts]
 backend = "app.main:main"
+dev = "fastapi dev src/backend/app/main.py"
 
 [build-system]
 requires = ["uv_build>=0.12.5,<0.13.0"]
