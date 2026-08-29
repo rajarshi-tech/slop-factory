@@ -16,6 +16,7 @@ dependencies = [
     "yt-dlp[default]>=2026.8.19",
     "fastapi>=0.141.1",
     "uvicorn[standard]>=0.52.4",
+    "google-genai>=2.20.0",
 ]
 
 [project.scripts]

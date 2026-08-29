@@ -25,8 +25,6 @@ def youtube_params_dir():
     return path
 
 
-
-
 def reddit_raw_dir(post_id: str):
     path = STORAGE / "reddit" / "raw" / post_id
     path.mkdir(parents=True, exist_ok=True)

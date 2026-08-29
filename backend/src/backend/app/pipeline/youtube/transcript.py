@@ -2,14 +2,16 @@ import re
 import json
 import ollama
 
-from app.utils.storage import youtube_video_dir
+from app.llm.base import LLMProvider
+from app.llm.factory import create_llm
+from app.utils.storage import youtube_params_dir, youtube_video_dir
 
 
 # ============================================================
 # CONFIG
 # ============================================================
 
-MODEL = "qwen3:8b"
+#MODEL = "qwen3:8b"
 
 # Transcript chunking
 CHUNK_SIZE = 100
@@ -528,22 +530,14 @@ def create_candidate_schema():
     }
 
 
-def discover_candidates(chunk):
+def discover_candidates(chunk, llm: LLMProvider):
 
     prompt = create_candidate_prompt(chunk)
 
-    response = ollama.chat(
-        model=MODEL,
-        messages=[
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ],
-        format=create_candidate_schema()
+    output = llm.generate(
+        prompt=prompt,
+        response_schema=create_candidate_schema(),
     )
-
-    output = response["message"]["content"]
 
     try:
 
@@ -983,7 +977,8 @@ def create_editor_schema():
 
 def refine_candidate(
     candidate,
-    transcript
+    transcript,
+    llm: LLMProvider
 ):
 
     context = get_context_for_candidate(
@@ -996,18 +991,11 @@ def refine_candidate(
         context
     )
 
-    response = ollama.chat(
-        model=MODEL,
-        messages=[
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ],
-        format=create_editor_schema()
+    output = llm.generate(
+        prompt=prompt,
+        response_schema=create_editor_schema(),
     )
 
-    output = response["message"]["content"]
 
     try:
 
@@ -1261,6 +1249,13 @@ def generateTimestamps(id):
 
     all_candidates = []
 
+    config_dir = youtube_params_dir() / "config.json"
+
+    with open(config_dir, "r", encoding="utf-8") as f:
+        config = json.load(f)
+
+    llm = create_llm(**config["llm"])
+
     for index, chunk in enumerate(chunks):
 
         print(
@@ -1269,7 +1264,8 @@ def generateTimestamps(id):
         )
 
         candidates = discover_candidates(
-            chunk
+            chunk,
+            llm
         )
 
         print(
@@ -1322,7 +1318,8 @@ def generateTimestamps(id):
 
         clip = refine_candidate(
             candidate,
-            transcript
+            transcript,
+            llm
         )
 
         if clip is None:
