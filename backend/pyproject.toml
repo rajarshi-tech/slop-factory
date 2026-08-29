@@ -9,7 +9,13 @@ dependencies = [
     "isodate>=0.7.2",
     "ollama>=0.6.2",
     "python-dotenv>=1.2.3",
+    "whisperx>=3.8.6",
+    "torch==2.8.0+cu128",
+    "torchaudio==2.8.0+cu128",
+    "torchvision==0.23.0+cu128",
     "yt-dlp[default]>=2026.8.19",
+    "fastapi>=0.141.1",
+    "uvicorn[standard]>=0.52.4",
 ]
 
 [project.scripts]
@@ -22,3 +28,13 @@ build-backend = "uv_build"
 [tool.uv.build-backend]
 module-name = "app"
 module-root = "src/backend"
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
+torchaudio = { index = "pytorch-cu128" }
+torchvision = { index = "pytorch-cu128" }
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true

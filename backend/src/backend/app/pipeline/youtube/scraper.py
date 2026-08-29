@@ -25,7 +25,8 @@ def scrape():
         "maxResults": int(params["maxResults"]),
         "videoDuration": params["videoDuration"],
         "videoCaption": params["videoCaption"],
-        "videoLicense": params["videoLicense"]
+        "videoLicense": params["videoLicense"],
+        "relevanceLanguage": "en"
     }
 
     if params.get("publishedAfter"):

@@ -9,7 +9,7 @@ from app.utils.storage import youtube_video_dir
 # CONFIG
 # ============================================================
 
-MODEL = "qwen2.5:7b"
+MODEL = "qwen3:8b"
 
 # Transcript chunking
 CHUNK_SIZE = 100
@@ -60,8 +60,152 @@ def timestamp_to_seconds(timestamp):
     )
 
 
+def _normalize_caption_for_comparison(text):
+    """Normalize caption text for rolling-caption comparisons."""
+    text = re.sub(r"<[^>]+>", "", text or "")
+    text = text.lower()
+    text = re.sub(r"[^\w\s']", " ", text, flags=re.UNICODE)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _split_sentences(text):
+    """
+    Split caption text at sentence punctuation while preserving the original
+    text as much as possible.
+    """
+    parts = re.split(r"(?<=[.!?。！？])\s+", text.strip())
+    return [part.strip() for part in parts if part.strip()]
+
+
+def _is_growing_caption(previous_text, current_text):
+    """
+    Return True when current_text looks like a later, more complete version
+    of previous_text.
+
+    Rolling VTT captions commonly look like:
+        "I think"
+        "I think this"
+        "I think this is important."
+
+    We only treat this as duplication when one normalized caption is a
+    substantial word-prefix of the other. This avoids collapsing ordinary
+    repeated speech.
+    """
+    previous = _normalize_caption_for_comparison(previous_text)
+    current = _normalize_caption_for_comparison(current_text)
+
+    if not previous or not current or previous == current:
+        return bool(previous and current)
+
+    previous_words = previous.split()
+    current_words = current.split()
+
+    if len(previous_words) < 2 or len(current_words) <= len(previous_words):
+        return False
+
+    # Require the complete earlier caption to be the beginning of the
+    # later caption.
+    return current_words[:len(previous_words)] == previous_words
+
+
+def clean_rolling_caption_duplicates(subtitles):
+    """
+    Collapse progressive/rolling VTT captions before transcript chunking.
+
+    The cleaner:
+      1. collapses consecutive captions that are growing versions of the
+         same speech fragment;
+      2. prefers the latest/most complete version;
+      3. removes repeated sentence fragments when they are exact duplicates;
+      4. leaves unrelated captions untouched.
+
+    Timestamps are retained from the complete/latest caption, which is the
+    version that contains the most complete text.
+    """
+    if not subtitles:
+        return []
+
+    cleaned = []
+
+    for subtitle in subtitles:
+        current = dict(subtitle)
+        current_text = current["text"]
+
+        # Compare against the most recent surviving caption. Rolling
+        # captions normally overlap in time or occur immediately after one
+        # another.
+        if cleaned:
+            previous = cleaned[-1]
+            temporal_gap = current["start"] - previous["end"]
+
+            same_caption_window = (
+                temporal_gap <= 1.0
+                and current["start"] <= previous["end"] + 1.0
+            )
+
+            if same_caption_window and _is_growing_caption(
+                previous["text"],
+                current_text
+            ):
+                # The current caption is the more complete version.
+                cleaned[-1] = current
+                continue
+
+            # If the two captions are effectively identical, retain the
+            # later timestamped version.
+            prev_norm = _normalize_caption_for_comparison(previous["text"])
+            curr_norm = _normalize_caption_for_comparison(current_text)
+
+            if (
+                same_caption_window
+                and prev_norm
+                and prev_norm == curr_norm
+            ):
+                cleaned[-1] = current
+                continue
+
+        cleaned.append(current)
+
+    # Remove duplicated sentence fragments that survived the rolling pass.
+    # This is deliberately conservative: only adjacent captions are merged
+    # when a sentence is repeated verbatim.
+    final = []
+
+    for subtitle in cleaned:
+        current = dict(subtitle)
+
+        if final:
+            previous = final[-1]
+            previous_sentences = _split_sentences(previous["text"])
+            current_sentences = _split_sentences(current["text"])
+
+            previous_norm = {
+                _normalize_caption_for_comparison(sentence)
+                for sentence in previous_sentences
+            }
+
+            # If the current caption consists only of sentences already
+            # present in the immediately preceding caption, keep the latest
+            # timestamped copy.
+            current_norm = [
+                _normalize_caption_for_comparison(sentence)
+                for sentence in current_sentences
+            ]
+
+            if (
+                current_norm
+                and all(sentence in previous_norm for sentence in current_norm)
+            ):
+                final[-1] = current
+                continue
+
+        final.append(current)
+
+    return final
+
+
 def vtt_to_json(vtt_file):
-    """Convert VTT subtitles into timestamped transcript entries."""
+    """Convert VTT subtitles into timestamped, cleaned transcript entries."""
 
     with open(vtt_file, "r", encoding="utf-8") as f:
         content = f.read()
@@ -125,12 +269,11 @@ def vtt_to_json(vtt_file):
                     "text": text
                 })
 
-    return subtitles
-
-
-# ============================================================
-# TRANSCRIPT CHUNKING
-# ============================================================
+    # IMPORTANT:
+    # Clean rolling/progressive captions before anything is chunked or sent
+    # to the LLM. This prevents the same growing speech fragment from being
+    # interpreted as multiple separate pieces of content.
+    return clean_rolling_caption_duplicates(subtitles)
 
 def chunk_transcript(
     transcript,
@@ -423,6 +566,57 @@ def discover_candidates(chunk):
 # CANDIDATE DEDUPLICATION
 # ============================================================
 
+def _text_similarity(text_a, text_b):
+    """
+    Calculate a conservative lexical similarity score.
+
+    This intentionally avoids another LLM call. Topic/title similarity is
+    used as a second signal alongside timestamp overlap.
+    """
+    from difflib import SequenceMatcher
+
+    a = _normalize_caption_for_comparison(text_a)
+    b = _normalize_caption_for_comparison(text_b)
+
+    if not a or not b:
+        return 0.0
+
+    if a == b:
+        return 1.0
+
+    a_words = set(a.split())
+    b_words = set(b.split())
+
+    if not a_words or not b_words:
+        return 0.0
+
+    jaccard = len(a_words & b_words) / len(a_words | b_words)
+    sequence = SequenceMatcher(None, a, b).ratio()
+
+    # Jaccard catches shared topic vocabulary; sequence catches similar
+    # wording/order. Requiring both signals makes this less aggressive.
+    return (0.6 * jaccard) + (0.4 * sequence)
+
+
+def _topics_are_similar(topic_a, topic_b):
+    """Return True only for strong topic/title similarity."""
+    similarity = _text_similarity(topic_a, topic_b)
+
+    if similarity >= 0.72:
+        return True
+
+    # Short topic strings can have lower lexical scores despite being the
+    # same idea. Require substantial shared vocabulary in that case.
+    a_words = set(_normalize_caption_for_comparison(topic_a).split())
+    b_words = set(_normalize_caption_for_comparison(topic_b).split())
+
+    if len(a_words) >= 2 and len(b_words) >= 2:
+        shared = len(a_words & b_words)
+        return shared >= 2 and shared / min(len(a_words), len(b_words)) >= 0.75
+
+    return False
+
+
 def deduplicate_candidates(candidates):
 
     valid_candidates = []
@@ -502,10 +696,20 @@ def deduplicate_candidates(candidates):
                 existing_duration
             )
 
-            if (
+            temporal_duplicate = (
                 shorter_duration > 0
                 and overlap / shorter_duration > 0.6
-            ):
+            )
+
+            semantic_duplicate = _topics_are_similar(
+                candidate.get("topic", ""),
+                existing.get("topic", "")
+            )
+
+            # Keep the original strong temporal rule, but also catch
+            # candidates that describe essentially the same editorial topic
+            # even when their timestamps do not overlap much.
+            if temporal_duplicate or semantic_duplicate:
                 duplicate = True
                 break
 
@@ -513,7 +717,6 @@ def deduplicate_candidates(candidates):
             unique.append(candidate)
 
     return unique
-
 
 # ============================================================
 # PASS 2 — FINAL EDITOR
@@ -836,6 +1039,8 @@ def refine_candidate(
             "end": end,
             "score": score,
             "title": result["title"],
+            "topic": candidate.get("topic", ""),
+            "hook": candidate.get("hook", ""),
             "reason": result["reason"]
         }
 
@@ -858,39 +1063,49 @@ def refine_candidate(
 
 def snap_to_subtitle_boundaries(
     clip,
-    transcript
+    transcript,
+    max_start_drift=2.0,
+    max_end_drift=2.0
 ):
     """
-    Snap timestamps to nearby subtitle boundaries.
+    Snap timestamps to nearby subtitle boundaries without allowing large
+    timestamp drift.
 
-    This prevents cuts in the middle of subtitle entries.
+    The old implementation always selected the nearest subtitle boundary,
+    even if that boundary was several seconds away. This version only snaps
+    when the nearest boundary is within a small, configurable tolerance.
+
+    For starts, the subtitle's start must be close to the requested start.
+    For ends, the subtitle's end must be close to the requested end.
+    Otherwise the LLM-selected timestamp is preserved.
     """
 
     if not transcript:
         return clip
 
-    start = clip["start"]
-    end = clip["end"]
+    start = float(clip["start"])
+    end = float(clip["end"])
 
     closest_start = min(
         transcript,
-        key=lambda x: abs(
-            x["start"] - start
-        )
+        key=lambda x: abs(x["start"] - start)
     )
 
     closest_end = min(
         transcript,
-        key=lambda x: abs(
-            x["end"] - end
-        )
+        key=lambda x: abs(x["end"] - end)
     )
 
-    clip["start"] = closest_start["start"]
-    clip["end"] = closest_end["end"]
+    start_drift = abs(closest_start["start"] - start)
+    end_drift = abs(closest_end["end"] - end)
+
+    if start_drift <= max_start_drift:
+        clip["start"] = closest_start["start"]
+
+    if end_drift <= max_end_drift:
+        clip["end"] = closest_end["end"]
 
     return clip
-
 
 # ============================================================
 # FINAL DEDUPLICATION
@@ -944,10 +1159,34 @@ def deduplicate_final_clips(clips):
                 existing_duration
             )
 
-            if (
+            temporal_duplicate = (
                 shorter_duration > 0
                 and overlap / shorter_duration > 0.5
-            ):
+            )
+
+            # Final clips have generated titles and, after the change in
+            # refine_candidate(), preserved candidate topics. Use both as
+            # semantic signals so near-duplicate clips can be removed even
+            # when their time ranges are different.
+            title_similarity = _text_similarity(
+                clip.get("title", ""),
+                existing.get("title", "")
+            )
+
+            topic_similarity = _text_similarity(
+                clip.get("topic", ""),
+                existing.get("topic", "")
+            )
+
+            semantic_duplicate = (
+                topic_similarity >= 0.72
+                or (
+                    title_similarity >= 0.78
+                    and topic_similarity >= 0.55
+                )
+            )
+
+            if temporal_duplicate or semantic_duplicate:
                 duplicate = True
                 break
 
@@ -955,7 +1194,6 @@ def deduplicate_final_clips(clips):
             result.append(clip)
 
     return result
-
 
 # ============================================================
 # MAIN PIPELINE
