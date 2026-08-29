@@ -1,92 +1,26 @@
 @import "tailwindcss";
 
-@theme {
-  --color-background: #080B10;
-  --color-surface: #0D1117;
-  --color-surface-elevated: #111720;
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
 
-  --color-primary: #00A8FF;
-  --color-primary-hover: #33B8FF;
-  --color-primary-muted: #0077B5;
-
-  --color-warning: #FFD43B;
-  --color-warning-hover: #FFE16A;
-  --color-warning-muted: #B89A00;
-
-  --color-foreground: #F1F5F9;
-  --color-foreground-secondary: #94A3B8;
-  --color-foreground-muted: #64748B;
-
-  --color-border: #1E2732;
-  --color-border-subtle: #151C25;
-  --color-border-active: #00A8FF;
-  --color-border-warning: #FFD43B;
-
-  --color-success: #3DDC84;
-  --color-error: #FF4D5A;
-
-  --color-terminal-background: #070A0E;
-  --color-terminal-text: #CBD5E1;
-  --color-terminal-blue: #00A8FF;
-  --color-terminal-warning: #FFD43B;
-  --color-terminal-success: #3DDC84;
-  --color-terminal-error: #FF4D5A;
-
-  --color-status-running: #00A8FF;
-  --color-status-complete: #3DDC84;
-  --color-status-waiting: #64748B;
-  --color-status-attention: #FFD43B;
-  --color-status-error: #FF4D5A;
-
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-:root {
-  --background: #080B10;
-  --foreground: #F1F5F9;
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
 }
 
 body {
-  background-color: var(--background);
+  background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
-  margin: 0;
-  padding: 0;
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-}
-
-/* Custom interactive blinker */
-@keyframes blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
-}
-
-.animate-blink {
-  animation: blink 1s step-end infinite;
-}
-
-/* Scrollbar styling */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-::-webkit-scrollbar-track {
-  background: #080B10;
-}
-::-webkit-scrollbar-thumb {
-  background: #1E2732;
-  border-radius: 3px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #00A8FF;
-}
-
-/* Technical grid styling */
-.tech-grid {
-  background-size: 20px 20px;
-  background-image: linear-gradient(to right, rgba(30, 39, 50, 0.15) 1px, transparent 1px),
-                    linear-gradient(to bottom, rgba(30, 39, 50, 0.15) 1px, transparent 1px);
+  font-family: Arial, Helvetica, sans-serif;
 }
