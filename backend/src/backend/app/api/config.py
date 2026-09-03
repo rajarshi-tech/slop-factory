@@ -21,133 +21,172 @@ def load_config():
     except FileNotFoundError:
         # Create default config if it doesn't exist
         default_config = {
+            "details": {
+                "llm": {
+                    "provider": {
+                        "ollama": {
+                            "models": [
+                                "qwen3:8b"
+                            ]
+                        },
+                        "gemini": {
+                            "models": [
+                                "models/gemini-2.5-flash",
+                                "models/gemini-2.5-pro",
+                                "models/gemini-2.5-flash-preview-tts",
+                                "models/gemini-2.5-pro-preview-tts",
+                                "models/gemma-4-26b-a4b-it",
+                                "models/gemma-4-31b-it",
+                                "models/gemini-flash-latest",
+                                "models/gemini-flash-lite-latest",
+                                "models/gemini-pro-latest",
+                                "models/gemini-2.5-flash-lite",
+                                "models/gemini-2.5-flash-image",
+                                "models/gemini-3-flash-preview",
+                                "models/gemini-3.1-pro-preview",
+                                "models/gemini-3.1-pro-preview-customtools",
+                                "models/gemini-3.1-flash-lite-preview",
+                                "models/gemini-3.1-flash-lite",
+                                "models/gemini-3-pro-image-preview",
+                                "models/gemini-3-pro-image",
+                                "models/nano-banana-pro-preview",
+                                "models/gemini-3.1-flash-image-preview",
+                                "models/gemini-3.1-flash-image",
+                                "models/gemini-3.1-flash-lite-image",
+                                "models/gemini-3.5-flash",
+                                "models/gemini-3.5-flash-lite",
+                                "models/gemini-omni-flash-preview",
+                                "models/gemini-omni-1.1-flash",
+                                "models/gemini-3.5-transcribe",
+                                "models/gemini-3.6-flash",
+                                "models/gemini-3.7-flash",
+                                "models/lyria-3-clip-preview",
+                                "models/lyria-3-pro-preview",
+                                "models/gemini-3.1-flash-tts-preview",
+                                "models/gemini-robotics-er-2-preview",
+                                "models/gemini-2.5-computer-use-preview-10-2025",
+                                "models/antigravity-preview-05-2026",
+                                "models/deep-research-max-preview-04-2026",
+                                "models/deep-research-preview-04-2026",
+                                "models/deep-research-pro-preview-12-2025"
+                            ]
+                        }
+                    }
+                    },
+                "params": {
+                    "order": [
+                        "date",
+                        "rating",
+                        "relevance",
+                        "title",
+                        "videoCount",
+                        "viewCount"
+                    ],
+                    "maxResults": {
+                        "min": 1,
+                        "max": 50,
+                        "default": 10
+                    },
+                    "videoCaption": [
+                        "any",
+                        "closedCaption",
+                        "none"
+                    ],
+                    "videoCategoryId": [
+                        { "id": "1", "name": "Film & Animation" },
+                        { "id": "2", "name": "Autos & Vehicles" },
+                        { "id": "10", "name": "Music" },
+                        { "id": "15", "name": "Pets & Animals" },
+                        { "id": "17", "name": "Sports" },
+                        { "id": "18", "name": "Short Movies" },
+                        { "id": "19", "name": "Travel & Events" },
+                        { "id": "20", "name": "Gaming" },
+                        { "id": "21", "name": "Videoblogging" },
+                        { "id": "22", "name": "People & Blogs" },
+                        { "id": "23", "name": "Comedy" },
+                        { "id": "24", "name": "Entertainment" },
+                        { "id": "25", "name": "News & Politics" },
+                        { "id": "26", "name": "Howto & Style" },
+                        { "id": "27", "name": "Education" },
+                        { "id": "28", "name": "Science & Technology" },
+                        { "id": "29", "name": "Nonprofits & Activism" },
+                        { "id": "30", "name": "Movies" },
+                        { "id": "31", "name": "Anime/Animation" },
+                        { "id": "32", "name": "Action/Adventure" },
+                        { "id": "33", "name": "Classics" },
+                        { "id": "34", "name": "Comedy" },
+                        { "id": "35", "name": "Documentary" },
+                        { "id": "36", "name": "Drama" },
+                        { "id": "37", "name": "Family" },
+                        { "id": "38", "name": "Foreign" },
+                        { "id": "39", "name": "Horror" },
+                        { "id": "40", "name": "Sci-Fi/Fantasy" },
+                        { "id": "41", "name": "Thriller" },
+                        { "id": "42", "name": "Shorts" },
+                        { "id": "43", "name": "Shows" },
+                        { "id": "44", "name": "Trailers" }
+                    ],
+                    "videoDefinition": [
+                        "any",
+                        "high",
+                        "standard"
+                    ],
+                    "videoDimension": [
+                        "2d",
+                        "3d",
+                        "any"
+                    ],
+                    "videoDuration": [
+                        "any",
+                        "long",
+                        "medium",
+                        "short"
+                    ],
+                    "videoEmbeddable": [
+                        "any",
+                        "true"
+                    ],
+                    "videoLicense": [
+                        "any",
+                        "creativeCommon",
+                        "youtube"
+                    ],
+                    "videoSyndicated": [
+                        "any",
+                        "true"
+                    ],
+                    "videoType": [
+                        "any",
+                        "episode",
+                        "movie"
+                    ],
+                    "safeSearch": [
+                        "moderate",
+                        "none",
+                        "strict"
+                    ],
+                }
+            },
             "llm": {
                 "provider": None,
                 "model": None
             },
-            "details": {
-                "llm": {
-                    "provider": {}
-                }
-            },
             "params": {
-            },
-            "params_options": {
-                "order": [
-                    "date",
-                    "rating",
-                    "relevance",
-                    "title",
-                    "videoCount",
-                    "viewCount"
-                ],
-                "maxResults": [
-                    "1",
-                    "2",
-                    "3",
-                    "4",
-                    "5",
-                    "6",
-                    "7",
-                    "8",
-                    "9",
-                    "10",
-                    "11",
-                    "12",
-                    "13",
-                    "14",
-                    "15",
-                    "16",
-                    "17",
-                    "18",
-                    "19",
-                    "20",
-                    "21",
-                    "22",
-                    "23",
-                    "24",
-                    "25",
-                    "26",
-                    "27",
-                    "28",
-                    "29",
-                    "30",
-                    "31",
-                    "32",
-                    "33",
-                    "34",
-                    "35",
-                    "36",
-                    "37",
-                    "38",
-                    "39",
-                    "40",
-                    "41",
-                    "42",
-                    "43",
-                    "44",
-                    "45",
-                    "46",
-                    "47",
-                    "48",
-                    "49",
-                    "50"
-                ],
-                "type": [
-                    "channel",
-                    "playlist",
-                    "video"
-                ],
-                "videoCaption": [
-                    "any",
-                    "closedCaption",
-                    "none"
-                ],
-                "videoCategoryId": "string (e.g. '10' for Music, '20' for Gaming)",
-                "videoDefinition": [
-                    "any",
-                    "high",
-                    "standard"
-                ],
-                "videoDimension": [
-                    "2d",
-                    "3d",
-                    "any"
-                ],
-                "videoDuration": [
-                    "any",
-                    "long",
-                    "medium",
-                    "short"
-                ],
-                "videoEmbeddable": [
-                    "any",
-                    "true"
-                ],
-                "videoLicense": [
-                    "any",
-                    "creativeCommon",
-                    "youtube"
-                ],
-                "videoSyndicated": [
-                    "any",
-                    "true"
-                ],
-                "videoType": [
-                    "any",
-                    "episode",
-                    "movie"
-                ],
-                "safeSearch": [
-                    "moderate",
-                    "none",
-                    "strict"
-                ],
-                "eventType": [
-                    "completed",
-                    "live",
-                    "upcoming"
-                ]
+                "q": "life without the internet",
+                "order": "viewCount",
+                "publishedAfter": None,
+                "publishedBefore": None,
+                "maxResults": 10,
+                "videoCaption": "closedCaption",
+                "videoCategoryId": None,
+                "videoDefinition": "any",
+                "videoDimension": "any",
+                "videoDuration": "medium",
+                "videoEmbeddable": "any",
+                "videoLicense": "any",
+                "videoSyndicated": "any",
+                "videoType": "any",
+                "safeSearch": "moderate",
             }
         }
 
@@ -338,6 +377,7 @@ def get_param_options():
     return config["details"]["params"]
 
 
+#set all param options
 @router.put("/llm/params")
 def set_patams(params: dict):
     config = load_config()
@@ -356,7 +396,6 @@ def set_patams(params: dict):
     config["params"]["videoSyndicated"] = params.get("videoSyndicated")
     config["params"]["videoType"] = params.get("videoType")
     config["params"]["safeSearch"] = params.get("safeSearch")
-    config["params"]["eventType"] = params.get("eventType")
 
     with open(config_dir, "w", encoding="utf-8") as f:
         json.dump(config, f, indent=2)

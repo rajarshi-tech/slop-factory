@@ -37,6 +37,8 @@ def scrape():
     if params.get("publishedBefore"):
         request_params["publishedBefore"] = params["publishedBefore"]
 
+    if params.get("videoCategoryId"):
+            request_params["videoCategoryId"] = params["videoCategoryId"]
 
 
     # get video links
