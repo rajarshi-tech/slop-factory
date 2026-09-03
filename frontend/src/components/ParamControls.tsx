@@ -10,14 +10,17 @@ import type { ParamOptions, SearchParams } from '../services/api';
 
 interface ParamControlsProps {
   onParamsChange: (params: Partial<SearchParams>) => void;
+  onParamsSave: (params: SearchParams) => void;
   defaultParams: SearchParams;
 }
 
-const ParamControls = ({ onParamsChange, defaultParams }: ParamControlsProps) => {
+const ParamControls = ({ onParamsChange, onParamsSave, defaultParams }: ParamControlsProps) => {
   const [options, setOptions] = useState<ParamOptions | null>(null);
   const [params, setParams] = useState<SearchParams>(defaultParams);
   const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
 
   /**
    * Load parameter options on mount
@@ -57,6 +60,28 @@ const ParamControls = ({ onParamsChange, defaultParams }: ParamControlsProps) =>
     const updatedParams = { ...params, [key]: value };
     setParams(updatedParams);
     onParamsChange(updatedParams);
+    // Clear save message when user makes changes
+    setSaveMessage(null);
+  };
+
+  /**
+   * Handle save parameters button click
+   */
+  const handleSaveParams = async () => {
+    setIsSaving(true);
+    setError(null);
+    setSaveMessage(null);
+
+    try {
+      await onParamsSave(params);
+      setSaveMessage('Parameters saved successfully!');
+      // Clear message after 3 seconds
+      setTimeout(() => setSaveMessage(null), 3000);
+    } catch (err) {
+      setError(`Failed to save parameters: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   if (isLoading) {
@@ -330,6 +355,34 @@ const ParamControls = ({ onParamsChange, defaultParams }: ParamControlsProps) =>
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
+      </div>
+
+      {/* Save message */}
+      {saveMessage && (
+        <div className="mt-4 p-3 bg-green-50 text-green-700 rounded">
+          {saveMessage}
+        </div>
+      )}
+
+      {/* Error message */}
+      {error && (
+        <div className="mt-4 p-3 bg-red-50 text-red-700 rounded">
+          {error}
+        </div>
+      )}
+
+      {/* Save Parameters Button */}
+      <div className="mt-6">
+        <button
+          onClick={handleSaveParams}
+          disabled={isSaving}
+          className="w-full px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors font-medium"
+        >
+          {isSaving ? 'Saving...' : 'Save Parameters'}
+        </button>
+        <p className="mt-2 text-sm text-gray-600">
+          Save parameters without searching. If no search query is set, the default value will be used.
+        </p>
       </div>
     </div>
   );

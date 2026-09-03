@@ -78,6 +78,30 @@ function App() {
   };
 
   /**
+   * Handle save parameters separately (without searching)
+   * If search query is empty, uses default value
+   */
+  const handleParamsSave = async (params: SearchParams) => {
+    try {
+      // If query is empty, use default or keep existing
+      const paramsToSave: SearchParams = {
+        ...params,
+        q: params.q || searchParams.q || 'life without the internet',
+      };
+
+      // Send to backend - this updates config.json with all params
+      await updateSearchParams(paramsToSave);
+
+      // Update local state
+      setSearchParams(paramsToSave);
+
+      console.log('Parameters saved:', paramsToSave);
+    } catch (err) {
+      throw new Error(`Failed to save parameters: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
+  };
+
+  /**
    * Handle search submission
    * Sends the search query along with all parameters to the backend
    */
@@ -144,6 +168,7 @@ function App() {
           <div>
             <ParamControls
               onParamsChange={handleParamsChange}
+              onParamsSave={handleParamsSave}
               defaultParams={searchParams}
             />
           </div>
