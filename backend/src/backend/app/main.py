@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import config, search, videos, jobs
+from app.api import config, jobs
 
 
 app = FastAPI(
@@ -36,17 +36,6 @@ app.include_router(
     tags=["Config"],
 )
 
-app.include_router(
-    search.router,
-    prefix="/api/search",
-    tags=["Search"],
-)
-
-app.include_router(
-    videos.router,
-    prefix="/api/videos",
-    tags=["Videos"],
-)
 
 app.include_router(
     jobs.router,
@@ -54,6 +43,12 @@ app.include_router(
     tags=["Jobs"],
 )
 
+
+app.include_router(
+    jobs.router,
+    prefix="/ws",
+    tags=["WebSocket"],
+)
 
 # ---------------------------------------------------------
 # Health check

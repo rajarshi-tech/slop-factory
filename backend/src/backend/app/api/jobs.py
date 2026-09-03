@@ -1,29 +1,28 @@
-from fastapi import APIRouter
-
+from fastapi import APIRouter, WebSocket
+from app.database import get_db
 
 router = APIRouter()
 
 
-@router.get("")
-def get_jobs():
-    return {
-        "jobs": []
-    }
+@router.websocket("/jobs")
+async def jobs_socket(websocket: WebSocket):
 
+    await websocket.accept()
 
-@router.get("/{job_id}")
-def get_job(job_id: str):
-    return {
-        "id": job_id,
-        "status": "queued",
-        "progress": 0,
-        "stage": None,
-    }
+    while True:
+        db = get_db()
 
+        jobs = db.execute(
+            "SELECT * FROM jobs"
+        ).fetchall()
 
-@router.get("/{job_id}/logs")
-def get_job_logs(job_id: str):
-    return {
-        "job_id": job_id,
-        "logs": [],
-    }
+        await websocket.send_json({
+            "jobs": [
+                dict(job)
+                for job in jobs
+            ]
+        })
+
+        db.close()
+
+        await websocket.receive_text()

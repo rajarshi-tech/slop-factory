@@ -23,3 +23,8 @@ def youtube_config_dir():
     path = STORAGE / "youtube" / "config"
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+def youtube_database_dir():
+    path = STORAGE / "youtube" / "database"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
