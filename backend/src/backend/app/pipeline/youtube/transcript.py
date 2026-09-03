@@ -4,7 +4,7 @@ import ollama
 
 from app.llm.base import LLMProvider
 from app.llm.factory import create_llm
-from app.utils.storage import youtube_params_dir, youtube_video_dir
+from app.utils.storage import youtube_config_dir, youtube_video_dir
 
 
 # ============================================================
@@ -1249,7 +1249,7 @@ def generateTimestamps(id):
 
     all_candidates = []
 
-    config_dir = youtube_params_dir() / "config.json"
+    config_dir = youtube_config_dir() / "config.json"
 
     with open(config_dir, "r", encoding="utf-8") as f:
         config = json.load(f)

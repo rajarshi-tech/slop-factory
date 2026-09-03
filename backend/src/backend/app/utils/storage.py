@@ -19,13 +19,7 @@ def youtube_links_dir():
     return path
 
 
-def youtube_params_dir():
-    path = STORAGE / "youtube" / "params"
-    path.mkdir(parents=True, exist_ok=True)
-    return path
-
-
-def reddit_raw_dir(post_id: str):
-    path = STORAGE / "reddit" / "raw" / post_id
+def youtube_config_dir():
+    path = STORAGE / "youtube" / "config"
     path.mkdir(parents=True, exist_ok=True)
     return path

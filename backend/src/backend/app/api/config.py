@@ -1,18 +1,17 @@
 import json
-import os
 
 from fastapi import APIRouter, HTTPException
 import ollama
 from google import genai
 
 from app.llm.factory import get_provider_models
-from app.utils.storage import youtube_params_dir
+from app.utils.storage import youtube_config_dir
 from app.core.config import GEMINI_API_KEY
 
 
 router = APIRouter()
 
-config_dir = str(youtube_params_dir() / 'config.json')
+config_dir = str(youtube_config_dir() / 'config.json')
 
 def load_config():
     """Load configuration with error handling"""
@@ -30,32 +29,134 @@ def load_config():
                 "llm": {
                     "provider": {}
                 }
+            },
+            "params": {
+            },
+            "params_options": {
+                "order": [
+                    "date",
+                    "rating",
+                    "relevance",
+                    "title",
+                    "videoCount",
+                    "viewCount"
+                ],
+                "maxResults": [
+                    "1",
+                    "2",
+                    "3",
+                    "4",
+                    "5",
+                    "6",
+                    "7",
+                    "8",
+                    "9",
+                    "10",
+                    "11",
+                    "12",
+                    "13",
+                    "14",
+                    "15",
+                    "16",
+                    "17",
+                    "18",
+                    "19",
+                    "20",
+                    "21",
+                    "22",
+                    "23",
+                    "24",
+                    "25",
+                    "26",
+                    "27",
+                    "28",
+                    "29",
+                    "30",
+                    "31",
+                    "32",
+                    "33",
+                    "34",
+                    "35",
+                    "36",
+                    "37",
+                    "38",
+                    "39",
+                    "40",
+                    "41",
+                    "42",
+                    "43",
+                    "44",
+                    "45",
+                    "46",
+                    "47",
+                    "48",
+                    "49",
+                    "50"
+                ],
+                "type": [
+                    "channel",
+                    "playlist",
+                    "video"
+                ],
+                "videoCaption": [
+                    "any",
+                    "closedCaption",
+                    "none"
+                ],
+                "videoCategoryId": "string (e.g. '10' for Music, '20' for Gaming)",
+                "videoDefinition": [
+                    "any",
+                    "high",
+                    "standard"
+                ],
+                "videoDimension": [
+                    "2d",
+                    "3d",
+                    "any"
+                ],
+                "videoDuration": [
+                    "any",
+                    "long",
+                    "medium",
+                    "short"
+                ],
+                "videoEmbeddable": [
+                    "any",
+                    "true"
+                ],
+                "videoLicense": [
+                    "any",
+                    "creativeCommon",
+                    "youtube"
+                ],
+                "videoSyndicated": [
+                    "any",
+                    "true"
+                ],
+                "videoType": [
+                    "any",
+                    "episode",
+                    "movie"
+                ],
+                "safeSearch": [
+                    "moderate",
+                    "none",
+                    "strict"
+                ],
+                "eventType": [
+                    "completed",
+                    "live",
+                    "upcoming"
+                ]
             }
         }
-        youtube_params_dir().mkdir(parents=True, exist_ok=True)
+
+        youtube_config_dir().mkdir(parents=True, exist_ok=True)
         with open(config_dir, "w", encoding="utf-8") as f:
             json.dump(default_config, f, indent=2)
         return default_config
     except json.JSONDecodeError:
         raise HTTPException(status_code=500, detail="Invalid JSON in config.json")
-
-@router.get("")
-def get_config():
-    return load_config()
-
-@router.put("")
-def update_config(new_llm_settings: dict):
-    config = load_config()
-        
-    # Update active selections safely
-    config["llm"]["provider"] = new_llm_settings.get("provider")
-    config["llm"]["model"] = new_llm_settings.get("model")
-    
-    with open(config_dir, "w", encoding="utf-8") as f:
-        json.dump(config, f, indent=2)
-        
-    # Return full config so frontend state stays perfectly synced
-    return config
 
 
 def check_ollama_availability() -> dict:
@@ -79,7 +180,7 @@ def check_gemini_availability() -> dict:
     if not GEMINI_API_KEY:
         return {
             "available": False,
-            "status": "Gemini API key is not configured in .env file"
+            "status": "Gemini API key is not configured"
         }
     
     try:
@@ -98,7 +199,30 @@ def check_gemini_availability() -> dict:
         }
 
 
-@router.get("/provider")
+
+#return full config file
+@router.get("")
+def get_config():
+    return load_config()
+
+
+#set ai model and provider
+@router.put("/llm/configure")
+def update_config(new_llm_settings: dict):
+    config = load_config()
+        
+    # Update active selections safely
+    config["llm"]["provider"] = new_llm_settings.get("provider")
+    config["llm"]["model"] = new_llm_settings.get("model")
+    
+    with open(config_dir, "w", encoding="utf-8") as f:
+        json.dump(config, f, indent=2)
+        
+    return config["llm"]
+
+
+#check ai providers
+@router.get("/llm/providers")
 def check_providers():
     """
     Check availability of LLM providers and update config.json
@@ -159,8 +283,9 @@ def check_providers():
     }
 
 
-@router.get("/llm")
-def refreshModels():
+#check ai models
+@router.get("/llm/models")
+def check_models():
     config = load_config()
 
     # Ensure proper structure exists
@@ -204,3 +329,36 @@ def refreshModels():
         response["message"] = "Some providers failed to fetch models and were removed from config"
     
     return response
+
+
+#get applicable param options
+@router.get("/llm/params/options")
+def get_param_options():
+    config = load_config()
+    return config["details"]["params"]
+
+
+@router.put("/llm/params")
+def set_patams(params: dict):
+    config = load_config()
+    config["params"]["q"] = params.get("q")
+    config["params"]["order"] = params.get("order")
+    config["params"]["publishedAfter"] = params.get("publishedAfter")
+    config["params"]["publishedBefore"] = params.get("publishedBefore")
+    config["params"]["maxResults"] = params.get("maxResults")
+    config["params"]["videoCaption"] = params.get("videoCaption")
+    config["params"]["videoCategoryId"] = params.get("videoCategoryId")
+    config["params"]["videoDefinition"] = params.get("videoDefinition")
+    config["params"]["videoDimension"] = params.get("videoDimension")
+    config["params"]["videoDuration"] = params.get("videoDuration")
+    config["params"]["videoEmbeddable"] = params.get("videoEmbeddable")
+    config["params"]["videoLicense"] = params.get("videoLicense")
+    config["params"]["videoSyndicated"] = params.get("videoSyndicated")
+    config["params"]["videoType"] = params.get("videoType")
+    config["params"]["safeSearch"] = params.get("safeSearch")
+    config["params"]["eventType"] = params.get("eventType")
+
+    with open(config_dir, "w", encoding="utf-8") as f:
+        json.dump(config, f, indent=2)
+
+    return config["params"]

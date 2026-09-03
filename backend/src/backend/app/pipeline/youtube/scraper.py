@@ -1,15 +1,17 @@
 from app.core.config import YOUTUBE_API_KEY
 from googleapiclient.discovery import build
-from app.utils.storage import youtube_params_dir, youtube_links_dir, youtube_video_dir
+from app.utils.storage import youtube_config_dir, youtube_links_dir, youtube_video_dir
 import json
 import isodate
 
 def scrape():
-    params_dir = youtube_params_dir()
+    config_dir = youtube_config_dir()
     links_dir = youtube_links_dir()
 
-    with open(str(params_dir / "params.json"), "r") as file:
-        params = json.load(file)
+    with open(str(config_dir / "config.json"), "r") as file:
+        config = json.load(file)
+
+    params = config["params"]
 
     youtube = build(
         "youtube",
