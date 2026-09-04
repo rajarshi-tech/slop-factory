@@ -8,6 +8,7 @@ from app.database import get_db
 from app.init_db import insert_job, get_job, get_all_jobs
 from app.utils.storage import youtube_video_dir
 from app.core.config import YOUTUBE_API_KEY
+from app.pipeline.youtube.trendCalculator import calculate_trend_for_video
 from googleapiclient.discovery import build
 import isodate
 
@@ -171,13 +172,16 @@ async def create_job_from_url(request: DirectURLRequest):
         with open(str(video_dir / "metadata.json"), "w", encoding="utf-8") as f:
             json.dump(metadata, f, indent=4, ensure_ascii=False)
 
-        # Insert job into database
+        # Calculate trend score immediately from freshly written metadata
+        trend_score = calculate_trend_for_video(video_id)
+
+        # Insert job into database (with trend score already calculated)
         job = insert_job(
             video_id=video_id,
             title=snippet["title"],
             channel=snippet["channelTitle"],
             source="direct_url",
-            trend_score=None
+            trend_score=trend_score
         )
 
         return {
