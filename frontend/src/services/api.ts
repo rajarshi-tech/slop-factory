@@ -161,6 +161,20 @@ export interface UncalculatedTrendsResponse {
   jobs: Job[];
 }
 
+export interface ArchiveResponse {
+  status: string;
+  archived_count: number;
+  video_ids: string[];
+  message: string;
+}
+
+export interface DeleteJobsResponse {
+  status: string;
+  deleted_count: number;
+  video_ids: string[];
+  message: string;
+}
+
 export interface HealthResponse {
   status: string;
 }
@@ -232,6 +246,16 @@ export const getJobs = async (): Promise<{ jobs: Job[]; count: number }> => {
 
 export const getJobById = async (videoId: string): Promise<Job> => {
   const response = await client.get(`/api/jobs/${videoId}`);
+  return response.data;
+};
+
+export const archiveJobs = async (videoIds: string[]): Promise<ArchiveResponse> => {
+  const response = await client.post('/api/jobs/archive', { video_ids: videoIds });
+  return response.data;
+};
+
+export const deleteJobs = async (videoIds: string[]): Promise<DeleteJobsResponse> => {
+  const response = await client.post('/api/jobs/delete', { video_ids: videoIds });
   return response.data;
 };
 

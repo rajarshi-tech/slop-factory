@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, List
 from app.database import get_db
 from datetime import datetime
 
@@ -199,6 +199,65 @@ def get_uncalculated_jobs(source: Optional[str] = "search"):
     db.close()
 
     return [dict(job) for job in jobs]
+
+
+def archive_jobs(video_ids: List[str]) -> int:
+    """
+    Set video_state to 'archived' for a list of video_ids.
+
+    Args:
+        video_ids: List of YouTube video IDs
+
+    Returns:
+        int: Number of updated rows
+    """
+    if not video_ids:
+        return 0
+
+    db = get_db()
+    try:
+        now = datetime.now().isoformat()
+        placeholders = ",".join(["?"] * len(video_ids))
+        query = f"""
+            UPDATE jobs 
+            SET video_state = 'archived', updated_at = ? 
+            WHERE video_id IN ({placeholders})
+        """
+        cursor = db.execute(query, [now] + list(video_ids))
+        db.commit()
+        return cursor.rowcount
+    except Exception as e:
+        db.rollback()
+        raise e
+    finally:
+        db.close()
+
+
+def delete_jobs(video_ids: List[str]) -> int:
+    """
+    Delete jobs from the database for a list of video_ids.
+
+    Args:
+        video_ids: List of YouTube video IDs
+
+    Returns:
+        int: Number of deleted rows
+    """
+    if not video_ids:
+        return 0
+
+    db = get_db()
+    try:
+        placeholders = ",".join(["?"] * len(video_ids))
+        query = f"DELETE FROM jobs WHERE video_id IN ({placeholders})"
+        cursor = db.execute(query, list(video_ids))
+        db.commit()
+        return cursor.rowcount
+    except Exception as e:
+        db.rollback()
+        raise e
+    finally:
+        db.close()
 
 
 if __name__ == "__main__":

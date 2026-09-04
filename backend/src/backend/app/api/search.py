@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from typing import Optional
 
 from app.pipeline.youtube.scraper import scrape
+from app.pipeline.youtube.trendCalculator import calculate_uncalculated_trends
 from app.init_db import insert_job
 from app.utils.storage import youtube_config_dir
 
@@ -19,13 +20,13 @@ class SearchRequest(BaseModel):
 @router.post("")
 async def search_videos(request: SearchRequest):
     """
-    Execute YouTube search and create jobs in database (trends calculated in separate route).
+    Execute YouTube search, create jobs in database, and auto-calculate trend scores.
 
     Args:
         request: SearchRequest with query and optional parameter overrides
 
     Returns:
-        dict with created jobs and count
+        dict with created jobs, count, and trend calculation results
     """
     try:
         # Load current config
@@ -79,9 +80,18 @@ async def search_videos(request: SearchRequest):
                 else:
                     errors.append(f"Failed to create job for {video_id}: {error_msg}")
 
+        # Auto-calculate trend scores for all newly inserted (uncalculated) jobs
+        trend_results = []
+        if created_jobs:
+            try:
+                trend_results = calculate_uncalculated_trends(source="search")
+            except Exception as e:
+                errors.append(f"Trend calculation error: {str(e)}")
+
         response = {
             "jobs": created_jobs,
-            "count": len(created_jobs)
+            "count": len(created_jobs),
+            "trend_calculated_count": len(trend_results),
         }
 
         if errors:

@@ -224,6 +224,7 @@ All routes are prefixed with the base URL `http://localhost:8000`.
 | `GET` | `/api/jobs` | — | List all jobs ordered by `created_at DESC` |
 | `GET` | `/api/jobs/{video_id}` | — | Get single job by YouTube video ID |
 | `POST` | `/api/jobs` or `/api/jobs/url` | `{ url }` | Ingest a video by direct YouTube URL |
+| `POST` | `/api/jobs/archive` | `{ video_ids: [...] }` | Set video state to `archived` in job database |
 | `WS` | `/ws/jobs` | — | WebSocket: push all jobs on each client message |
 
 **Direct URL request:**

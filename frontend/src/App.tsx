@@ -4,13 +4,13 @@ import type { TabType } from './components/Navbar';
 import { IngestionSection } from './components/IngestionSection';
 import { TrendCalculatorSection } from './components/TrendCalculatorSection';
 import { JobQueueSection } from './components/JobQueueSection';
+import { ArchivedSection } from './components/ArchivedSection';
 import ConfigSection from './components/ConfigSection';
 import ParamControls from './components/ParamControls';
 import {
   getConfig,
   updateSearchParams,
   getJobs,
-  getUncalculatedTrends,
   checkHealth,
   WS_BASE_URL,
 } from './services/api';
@@ -42,7 +42,6 @@ function App() {
   // Jobs state
   const [jobs, setJobs] = useState<Job[]>([]);
   const [isLoadingJobs, setIsLoadingJobs] = useState<boolean>(false);
-  const [uncalculatedCount, setUncalculatedCount] = useState<number>(0);
 
   // Status state
   const [isBackendHealthy, setIsBackendHealthy] = useState<boolean>(false);
@@ -78,13 +77,6 @@ function App() {
     } finally {
       setIsLoadingJobs(false);
     }
-
-    try {
-      const uncalcRes = await getUncalculatedTrends('search');
-      setUncalculatedCount(uncalcRes.uncalculated_count || 0);
-    } catch (err) {
-      console.error('Failed to fetch uncalculated count:', err);
-    }
   }, []);
 
   /**
@@ -105,11 +97,6 @@ function App() {
           const data = JSON.parse(event.data);
           if (data && Array.isArray(data.jobs)) {
             setJobs(data.jobs);
-            // Count uncalculated
-            const uncalc = data.jobs.filter(
-              (j: Job) => j.source === 'search' && (j.trend_score === null || j.trend_score === undefined)
-            ).length;
-            setUncalculatedCount(uncalc);
           }
         } catch (err) {
           console.error('Error parsing WebSocket data:', err);
@@ -166,9 +153,6 @@ function App() {
 
   const handleJobCreated = (newJob: Job) => {
     setJobs((prev) => [newJob, ...prev.filter((j) => j.video_id !== newJob.video_id)]);
-    if (newJob.source === 'search' && newJob.trend_score === null) {
-      setUncalculatedCount((c) => c + 1);
-    }
   };
 
   const handleSearchCompleted = (newJobs: Job[]) => {
@@ -176,7 +160,6 @@ function App() {
       const existingIds = new Set(newJobs.map((j) => j.video_id));
       return [...newJobs, ...prev.filter((j) => !existingIds.has(j.video_id))];
     });
-    setUncalculatedCount((c) => c + newJobs.length);
   };
 
   return (
@@ -187,8 +170,8 @@ function App() {
         onSelectTab={setActiveTab}
         isBackendHealthy={isBackendHealthy}
         isWsConnected={isWsConnected}
-        uncalculatedCount={uncalculatedCount}
-        activeJobCount={jobs.filter((j) => ['queued', 'downloading', 'transcribing'].includes(j.job_status)).length}
+        activeJobCount={jobs.filter((j) => j.video_state !== 'archived' && ['queued', 'downloading', 'transcribing'].includes(j.job_status)).length}
+        archivedJobCount={jobs.filter((j) => j.video_state === 'archived').length}
       />
 
       {/* Main Content Area */}
@@ -210,17 +193,6 @@ function App() {
               </div>
 
               <div
-                onClick={() => setActiveTab('trends')}
-                className="p-5 rounded-2xl bg-gradient-to-tr from-slate-900/60 to-amber-950/20 border border-amber-500/20 backdrop-blur-md cursor-pointer hover:border-amber-500/40 transition-all group"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-amber-300 uppercase tracking-wider block">Pending Trend Scores</span>
-                  <span className="text-xs text-amber-400 group-hover:translate-x-1 transition-transform">Calculate →</span>
-                </div>
-                <span className="text-3xl font-black text-amber-400 mt-1 block">{uncalculatedCount}</span>
-              </div>
-
-              <div
                 onClick={() => setActiveTab('settings')}
                 className="p-5 rounded-2xl bg-slate-900/60 border border-slate-800/80 backdrop-blur-md cursor-pointer hover:border-slate-700 transition-all group"
               >
@@ -236,21 +208,32 @@ function App() {
           </div>
         )}
 
-        {/* TAB 2: TREND RANKINGS */}
-        {activeTab === 'trends' && (
+        {/* TAB 2: TREND CALCULATOR */}
+        {activeTab === 'trend' && (
           <div className="space-y-8 animate-fadeIn">
             <TrendCalculatorSection
-              uncalculatedCount={uncalculatedCount}
-              onRefreshNeeded={loadData}
-              onViewJobs={() => setActiveTab('jobs')}
+              jobs={jobs}
+              onRefresh={loadData}
             />
           </div>
         )}
 
-        {/* TAB 3: JOB QUEUE */}
+        {/* TAB 2: JOB QUEUE */}
         {activeTab === 'jobs' && (
           <div className="space-y-8 animate-fadeIn">
             <JobQueueSection
+              jobs={jobs}
+              isLoading={isLoadingJobs}
+              onRefresh={loadData}
+              isWsConnected={isWsConnected}
+            />
+          </div>
+        )}
+
+        {/* TAB 3: ARCHIVED */}
+        {activeTab === 'archived' && (
+          <div className="space-y-8 animate-fadeIn">
+            <ArchivedSection
               jobs={jobs}
               isLoading={isLoadingJobs}
               onRefresh={loadData}

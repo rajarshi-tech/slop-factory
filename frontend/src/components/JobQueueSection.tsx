@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { getJobById } from '../services/api';
+import { getJobById, archiveJobs } from '../services/api';
 import type { Job } from '../services/api';
 
 interface JobQueueSectionProps {
@@ -21,9 +21,13 @@ export const JobQueueSection: React.FC<JobQueueSectionProps> = ({
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [isViewingDetails, setIsViewingDetails] = useState<boolean>(false);
   const [detailsLoading, setDetailsLoading] = useState<boolean>(false);
+  const [archivingId, setArchivingId] = useState<string | null>(null);
 
-  // Filter jobs
-  const filteredJobs = jobs.filter((job) => {
+  // Exclude archived videos from job queue
+  const unarchivedJobs = jobs.filter((job) => job.video_state !== 'archived');
+
+  // Filter unarchived jobs
+  const filteredJobs = unarchivedJobs.filter((job) => {
     if (filterStatus !== 'all' && job.job_status !== filterStatus) return false;
     if (filterSource !== 'all' && job.source !== filterSource) return false;
     if (searchQuery.trim()) {
@@ -35,6 +39,21 @@ export const JobQueueSection: React.FC<JobQueueSectionProps> = ({
     }
     return true;
   });
+
+  const handleArchiveJob = async (videoId: string) => {
+    try {
+      setArchivingId(videoId);
+      await archiveJobs([videoId]);
+      if (selectedJob?.video_id === videoId) {
+        setIsViewingDetails(false);
+      }
+      onRefresh();
+    } catch (err) {
+      console.error('Failed to archive job:', err);
+    } finally {
+      setArchivingId(null);
+    }
+  };
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -73,7 +92,7 @@ export const JobQueueSection: React.FC<JobQueueSectionProps> = ({
       <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-5 backdrop-blur-xl shadow-xl flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div className="flex flex-wrap items-center gap-3 flex-1">
           {/* Search filter input */}
-          <div className="relative flex-1 min-w-[200px] max-w-sm">
+          <div className="relative flex-1 min-w-50 max-w-sm">
             <input
               type="text"
               value={searchQuery}
@@ -97,7 +116,7 @@ export const JobQueueSection: React.FC<JobQueueSectionProps> = ({
             onChange={(e) => setFilterStatus(e.target.value)}
             className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           >
-            <option value="all">All Statuses ({jobs.length})</option>
+            <option value="all">All Statuses ({unarchivedJobs.length})</option>
             <option value="queued">Queued</option>
             <option value="downloading">Downloading</option>
             <option value="downloaded">Downloaded</option>
@@ -208,10 +227,10 @@ export const JobQueueSection: React.FC<JobQueueSectionProps> = ({
                     </td>
 
                     {/* Progress */}
-                    <td className="py-4 px-4 min-w-[120px]">
+                    <td className="py-4 px-4 min-w-30">
                       <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
                         <div
-                          className="bg-gradient-to-r from-indigo-500 to-emerald-400 h-1.5 rounded-full transition-all duration-300"
+                          className="bg-linear-to-r from-indigo-500 to-emerald-400 h-1.5 rounded-full transition-all duration-300"
                           style={{ width: `${Math.max(job.progress || 0, job.job_status === 'completed' ? 100 : 5)}%` }}
                         />
                       </div>
@@ -228,6 +247,17 @@ export const JobQueueSection: React.FC<JobQueueSectionProps> = ({
                     {/* Actions */}
                     <td className="py-4 px-4 text-right">
                       <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => handleArchiveJob(job.video_id)}
+                          disabled={archivingId === job.video_id}
+                          className="px-2.5 py-1 text-xs font-medium text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 rounded-lg border border-amber-500/30 transition-colors flex items-center gap-1 disabled:opacity-50"
+                          title="Archive job"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v1a2 2 0 01-2 2M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+                          </svg>
+                          <span>{archivingId === job.video_id ? 'Archiving...' : 'Archive'}</span>
+                        </button>
                         <button
                           onClick={() => handleOpenDetails(job)}
                           className="px-2.5 py-1 text-xs font-medium text-slate-300 bg-slate-800 hover:bg-slate-700 rounded-lg border border-slate-700 transition-colors"
@@ -320,6 +350,16 @@ export const JobQueueSection: React.FC<JobQueueSectionProps> = ({
             )}
 
             <div className="flex justify-end gap-3 pt-2">
+              <button
+                onClick={() => handleArchiveJob(selectedJob.video_id)}
+                disabled={archivingId === selectedJob.video_id}
+                className="px-4 py-2 bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/40 text-xs font-semibold rounded-xl transition-colors disabled:opacity-50 flex items-center gap-1.5"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v1a2 2 0 01-2 2M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+                </svg>
+                {archivingId === selectedJob.video_id ? 'Archiving...' : 'Archive Video'}
+              </button>
               <a
                 href={`https://youtube.com/watch?v=${selectedJob.video_id}`}
                 target="_blank"

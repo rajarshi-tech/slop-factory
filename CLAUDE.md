@@ -90,11 +90,12 @@ npm run lint     # ESLint checks
 - `GET /api/config/search/params/options` — Valid values/ranges for all search parameters
 - `PUT /api/config/search/params` — Persist new search param values to `config.json`
 
-### Ingestion
+### Ingestion & Jobs
 - `POST /api/search` — Keyword search → queue jobs (`source="search"`, `trend_score=NULL`). Body: `{ q, overrideParams? }`
 - `POST /api/jobs` / `POST /api/jobs/url` — Direct URL ingestion (`source="direct_url"`). Body: `{ url }`
 - `GET /api/jobs` — List all jobs (ordered `created_at DESC`)
 - `GET /api/jobs/{video_id}` — Get single job by video ID
+- `POST /api/jobs/archive` — Set video(s) state to archived. Body: `{ video_ids: ["id1", "id2"] }`
 - `WS /ws/jobs` — WebSocket: sends snapshot of all jobs on each client message (pull-based)
 
 ### Trend

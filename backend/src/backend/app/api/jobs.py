@@ -1,12 +1,13 @@
 import re
 import json
+import shutil
 from fastapi import APIRouter, WebSocket, HTTPException
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 
 from app.database import get_db
-from app.init_db import insert_job, get_job, get_all_jobs
-from app.utils.storage import youtube_video_dir
+from app.init_db import insert_job, get_job, get_all_jobs, archive_jobs, delete_jobs
+from app.utils.storage import youtube_video_dir, STORAGE
 from app.core.config import YOUTUBE_API_KEY
 from app.pipeline.youtube.trendCalculator import calculate_trend_for_video
 from googleapiclient.discovery import build
@@ -18,6 +19,16 @@ router = APIRouter()
 
 class DirectURLRequest(BaseModel):
     url: str
+
+
+class ArchiveRequest(BaseModel):
+    video_ids: Optional[List[str]] = None
+    video_id: Optional[str] = None
+
+
+class DeleteJobsRequest(BaseModel):
+    video_ids: Optional[List[str]] = None
+    video_id: Optional[str] = None
 
 
 def extract_video_id(url: str) -> Optional[str]:
@@ -196,6 +207,90 @@ async def create_job_from_url(request: DirectURLRequest):
         raise HTTPException(
             status_code=500,
             detail=f"Failed to create job: {str(e)}"
+        )
+
+
+@router.post("/archive")
+@router.put("/archive")
+async def archive_videos(request: ArchiveRequest):
+    """
+    Set video_state to 'archived' in the job database for specified video IDs.
+
+    Args:
+        request: ArchiveRequest with video_ids array or video_id string
+
+    Returns:
+        JSON response with archived count and video IDs
+    """
+    try:
+        video_ids = request.video_ids or ([] if not request.video_id else [request.video_id])
+
+        if not video_ids:
+            raise HTTPException(
+                status_code=400,
+                detail="No video_ids provided in request body."
+            )
+
+        archived_count = archive_jobs(video_ids)
+
+        return {
+            "status": "success",
+            "archived_count": archived_count,
+            "video_ids": video_ids,
+            "message": f"Successfully set {archived_count} video(s) to archived."
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to archive videos: {str(e)}"
+        )
+
+
+@router.post("/delete")
+@router.delete("/delete")
+@router.delete("")
+async def delete_videos(request: DeleteJobsRequest):
+    """
+    Delete jobs from DB and remove their content directory and all related files.
+
+    Args:
+        request: DeleteJobsRequest with video_ids array or video_id string
+
+    Returns:
+        JSON response with deleted count and video IDs
+    """
+    try:
+        video_ids = request.video_ids or ([] if not request.video_id else [request.video_id])
+
+        if not video_ids:
+            raise HTTPException(
+                status_code=400,
+                detail="No video_ids provided in request body."
+            )
+
+        # Remove video content folders and files
+        for vid in video_ids:
+            content_dir = STORAGE / "youtube" / "content" / vid
+            if content_dir.exists() and content_dir.is_dir():
+                shutil.rmtree(content_dir, ignore_errors=True)
+
+        # Delete matching job rows from SQLite
+        deleted_count = delete_jobs(video_ids)
+
+        return {
+            "status": "success",
+            "deleted_count": deleted_count,
+            "video_ids": video_ids,
+            "message": f"Successfully deleted {deleted_count} video(s) and associated files."
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to delete videos: {str(e)}"
         )
 
 

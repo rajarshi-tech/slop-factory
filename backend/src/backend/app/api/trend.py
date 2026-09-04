@@ -6,7 +6,7 @@ from app.pipeline.youtube.trendCalculator import (
     calculate_uncalculated_trends,
     calculate_trend_for_video,
 )
-from app.init_db import get_uncalculated_jobs
+from app.init_db import get_uncalculated_jobs, get_job
 
 
 router = APIRouter()
@@ -35,9 +35,14 @@ async def calculate_trends(request: Optional[TrendCalculateRequest] = None):
             for video_id in video_ids:
                 score = calculate_trend_for_video(video_id)
                 if score is not None:
+                    job_info = get_job(video_id)
                     calculated_videos.append({
                         "video_id": video_id,
-                        "trend_score": score
+                        "title": job_info.get("title") if job_info else None,
+                        "channel": job_info.get("channel") if job_info else None,
+                        "source": job_info.get("source") if job_info else None,
+                        "trend_score": score,
+                        "job": job_info
                     })
         else:
             calculated_videos = calculate_uncalculated_trends(source=source)

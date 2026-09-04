@@ -21,7 +21,8 @@ Slop Factory is an AI-driven YouTube pipeline that searches, downloads, transcri
 - Execute calculation: `POST /api/trend/calculate`.
 - This evaluates engagement rate + view velocity and writes results to `metadata.json` and `job.db`.
 
-### 3. Monitoring Jobs
+### 3. Monitoring & Archiving Jobs
 - REST: `GET /api/jobs`.
+- Archive jobs: `POST /api/jobs/archive` with JSON `{"video_ids": ["id1", "id2"]}`.
 - WebSocket: Connect to `ws://localhost:8000/ws/jobs`.
 - Inspect single job: `GET /api/jobs/{video_id}`.

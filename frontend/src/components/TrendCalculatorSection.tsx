@@ -1,268 +1,470 @@
-import React, { useState, useEffect } from 'react';
-import {
-  getUncalculatedTrends,
-  calculateTrends,
-} from '../services/api';
-import type { Job, CalculatedVideo } from '../services/api';
+import React, { useState, useMemo } from 'react';
+import { calculateTrends, getJobs } from '../services/api';
+import type { Job } from '../services/api';
 
 interface TrendCalculatorSectionProps {
-  uncalculatedCount: number;
-  onRefreshNeeded: () => void;
-  onViewJobs: () => void;
+  jobs: Job[];
+  onRefresh: () => void;
 }
 
 export const TrendCalculatorSection: React.FC<TrendCalculatorSectionProps> = ({
-  onRefreshNeeded,
-  onViewJobs,
+  jobs,
+  onRefresh,
 }) => {
-  const [uncalculatedJobs, setUncalculatedJobs] = useState<Job[]>([]);
-  const [recentCalculations, setRecentCalculations] = useState<CalculatedVideo[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isCalculating, setIsCalculating] = useState(false);
-  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [isCalculating, setIsCalculating] = useState<boolean>(false);
+  const [calculatingVideoId, setCalculatingVideoId] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [searchFilter, setSearchFilter] = useState<string>('');
+  const [sortBy, setSortBy] = useState<'score-desc' | 'score-asc' | 'title' | 'date'>('score-desc');
+  const [showFormulaDetails, setShowFormulaDetails] = useState<boolean>(false);
 
-  const fetchUncalculated = async () => {
-    setIsLoading(true);
-    setErrorMessage(null);
-    try {
-      const res = await getUncalculatedTrends('search');
-      setUncalculatedJobs(res.jobs || []);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to fetch uncalculated jobs';
-      setErrorMessage(msg);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  // Statistics
+  const totalJobsCount = jobs.length;
+  const rankedJobsCount = jobs.filter((j) => j.trend_score !== null && j.trend_score !== undefined).length;
+  const unrankedJobsCount = totalJobsCount - rankedJobsCount;
 
-  useEffect(() => {
-    fetchUncalculated();
-  }, []);
+  const avgTrendScore = useMemo(() => {
+    const scoredJobs = jobs.filter((j) => typeof j.trend_score === 'number');
+    if (scoredJobs.length === 0) return 0;
+    const sum = scoredJobs.reduce((acc, j) => acc + (j.trend_score || 0), 0);
+    return sum / scoredJobs.length;
+  }, [jobs]);
 
-  const handleCalculateAll = async () => {
+  const maxTrendScore = useMemo(() => {
+    const scoredJobs = jobs.filter((j) => typeof j.trend_score === 'number');
+    if (scoredJobs.length === 0) return 0;
+    return Math.max(...scoredJobs.map((j) => j.trend_score || 0));
+  }, [jobs]);
+
+  /**
+   * Recalculate trend scores for ALL videos in job.db
+   */
+  const handleRecalculateAll = async () => {
     setIsCalculating(true);
-    setStatusMessage(null);
+    setSuccessMessage(null);
     setErrorMessage(null);
 
     try {
-      const result = await calculateTrends('search');
-      setStatusMessage(result.message || `Trend scores calculated for ${result.calculated_count} video(s)!`);
-      if (result.jobs && result.jobs.length > 0) {
-        setRecentCalculations((prev) => [...result.jobs, ...prev]);
+      // First fetch the latest jobs from DB to ensure we have every video ID
+      const latestJobsRes = await getJobs();
+      const allJobs = latestJobsRes.jobs || jobs;
+
+      if (allJobs.length === 0) {
+        setErrorMessage('No videos found in job.db to calculate trend scores.');
+        setIsCalculating(false);
+        return;
       }
-      // Refresh uncalculated list
-      await fetchUncalculated();
-      onRefreshNeeded();
+
+      const allVideoIds = allJobs.map((j) => j.video_id);
+
+      // Call API route with all video_ids to recalculate trend score for all videos in job.db
+      const res = await calculateTrends(undefined, allVideoIds);
+
+      setSuccessMessage(
+        `Successfully recalculated trend score for all ${res.calculated_count} video(s) in job.db!`
+      );
+      onRefresh();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Trend calculation failed';
-      setErrorMessage(msg);
+      const msg = err instanceof Error ? err.message : 'Unknown error during calculation';
+      setErrorMessage(`Failed to recalculate trend scores: ${msg}`);
     } finally {
       setIsCalculating(false);
     }
   };
 
-  return (
-    <div className="space-y-8">
-      {/* Header card with Action */}
-      <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-6 sm:p-8 backdrop-blur-xl relative overflow-hidden shadow-2xl">
-        <div className="absolute top-0 right-0 -mr-20 -mt-20 w-80 h-80 rounded-full bg-amber-500/10 blur-3xl pointer-events-none" />
+  /**
+   * Recalculate trend score for a single video
+   */
+  const handleRecalculateSingle = async (videoId: string) => {
+    setCalculatingVideoId(videoId);
+    setSuccessMessage(null);
+    setErrorMessage(null);
 
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative">
-          <div>
+    try {
+      const res = await calculateTrends(undefined, [videoId]);
+      const newScore = res.jobs && res.jobs[0] ? res.jobs[0].trend_score : null;
+      setSuccessMessage(
+        `Recalculated trend score for ${videoId}${newScore !== null ? `: ${newScore.toFixed(4)}` : ''}`
+      );
+      onRefresh();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to recalculate video score';
+      setErrorMessage(msg);
+    } finally {
+      setCalculatingVideoId(null);
+    }
+  };
+
+  // Filter & sort videos
+  const filteredAndSortedJobs = useMemo(() => {
+    return jobs
+      .filter((j) => {
+        if (!searchFilter.trim()) return true;
+        const q = searchFilter.toLowerCase();
+        return (
+          (j.title && j.title.toLowerCase().includes(q)) ||
+          (j.channel && j.channel.toLowerCase().includes(q)) ||
+          j.video_id.toLowerCase().includes(q)
+        );
+      })
+      .sort((a, b) => {
+        if (sortBy === 'score-desc') {
+          const scoreA = a.trend_score ?? -Infinity;
+          const scoreB = b.trend_score ?? -Infinity;
+          return scoreB - scoreA;
+        }
+        if (sortBy === 'score-asc') {
+          const scoreA = a.trend_score ?? Infinity;
+          const scoreB = b.trend_score ?? Infinity;
+          return scoreA - scoreB;
+        }
+        if (sortBy === 'title') {
+          return (a.title || '').localeCompare(b.title || '');
+        }
+        if (sortBy === 'date') {
+          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+        }
+        return 0;
+      });
+  }, [jobs, searchFilter, sortBy]);
+
+  return (
+    <div className="space-y-8 animate-fadeIn">
+      {/* Header Banner */}
+      <div className="relative overflow-hidden p-6 sm:p-8 rounded-3xl bg-linear-to-r from-slate-900 via-slate-900/90 to-amber-950/40 border border-slate-800 shadow-2xl">
+        <div className="absolute top-0 right-0 -mt-12 -mr-12 w-64 h-64 rounded-full bg-amber-500/10 blur-3xl pointer-events-none" />
+        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="space-y-2 max-w-2xl">
             <div className="flex items-center gap-3">
               <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30">
                 <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
                 </svg>
               </div>
-              <h2 className="text-2xl font-bold text-white tracking-tight">YouTube Trend Rank Calculator</h2>
+              <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+                Trend Score Calculator
+              </h2>
             </div>
-            <p className="text-slate-400 text-sm mt-2 max-w-2xl">
-              Evaluates views per hour (velocity), subscriber velocity, like rates, and comment rates from each video's metadata to calculate an objective trend ranking score.
+            <p className="text-slate-300 text-sm sm:text-base leading-relaxed">
+              Recalculate trend scores for all videos in <code className="px-1.5 py-0.5 rounded bg-slate-800 text-amber-300 font-mono text-xs">job.db</code> based on video age, view velocity, and engagement rates.
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
             <button
-              onClick={fetchUncalculated}
-              disabled={isLoading || isCalculating}
-              className="px-4 py-3.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white font-medium rounded-2xl border border-slate-700 transition-colors flex items-center gap-2 text-sm disabled:opacity-50"
-              title="Refresh uncalculated list"
-            >
-              <svg className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-              <span>Refresh</span>
-            </button>
-
-            <button
-              onClick={handleCalculateAll}
-              disabled={isCalculating || uncalculatedJobs.length === 0}
-              className="px-6 py-3.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold rounded-2xl shadow-lg shadow-amber-500/25 transition-all flex items-center gap-2 text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+              onClick={handleRecalculateAll}
+              disabled={isCalculating || totalJobsCount === 0}
+              className={`flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-2xl font-bold text-sm transition-all shadow-lg ${
+                isCalculating || totalJobsCount === 0
+                  ? 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700'
+                  : 'bg-linear-to-r from-amber-500 via-amber-600 to-rose-600 hover:from-amber-400 hover:to-rose-500 text-white shadow-amber-500/20 hover:shadow-amber-500/30 active:scale-95'
+              }`}
             >
               {isCalculating ? (
                 <>
-                  <svg className="animate-spin w-4 h-4 text-slate-950" fill="none" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5 animate-spin text-white" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                   </svg>
-                  <span>Calculating Scores...</span>
+                  <span>Recalculating All ({totalJobsCount})...</span>
                 </>
               ) : (
                 <>
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                   </svg>
-                  <span>Calculate Trends ({uncalculatedJobs.length})</span>
+                  <span>Recalculate All Trend Scores</span>
                 </>
               )}
             </button>
           </div>
         </div>
+      </div>
 
-        {/* Notifications */}
-        {statusMessage && (
-          <div className="mt-4 p-4 bg-emerald-950/60 border border-emerald-800 text-emerald-300 rounded-2xl text-sm flex items-center gap-3">
+      {/* Notifications */}
+      {successMessage && (
+        <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 flex items-center justify-between gap-3 animate-fadeIn">
+          <div className="flex items-center gap-3">
             <svg className="w-5 h-5 text-emerald-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            <span>{statusMessage}</span>
+            <span className="text-sm font-medium">{successMessage}</span>
           </div>
-        )}
+          <button
+            onClick={() => setSuccessMessage(null)}
+            className="text-emerald-400 hover:text-emerald-200 text-xs font-semibold px-2 py-1 rounded-lg hover:bg-emerald-500/20"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
-        {errorMessage && (
-          <div className="mt-4 p-4 bg-rose-950/60 border border-rose-800 text-rose-300 rounded-2xl text-sm flex items-center gap-3">
+      {errorMessage && (
+        <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 flex items-center justify-between gap-3 animate-fadeIn">
+          <div className="flex items-center gap-3">
             <svg className="w-5 h-5 text-rose-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            <span>{errorMessage}</span>
+            <span className="text-sm font-medium">{errorMessage}</span>
           </div>
-        )}
-      </div>
-
-      {/* Uncalculated Queue Card */}
-      <div className="bg-slate-900/60 border border-slate-800/80 rounded-3xl p-6 backdrop-blur-md">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping" />
-            <h3 className="text-lg font-bold text-white">
-              Newly Ingested Videos Pending Trend Ranking ({uncalculatedJobs.length})
-            </h3>
-          </div>
-        </div>
-
-        {uncalculatedJobs.length === 0 ? (
-          <div className="py-8 text-center text-slate-500 border border-dashed border-slate-800 rounded-2xl bg-slate-950/30">
-            <svg className="w-10 h-10 text-slate-600 mx-auto mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <p className="text-sm font-medium text-slate-400">All searched videos have calculated trend scores!</p>
-            <p className="text-xs text-slate-500 mt-1">Use the "Ingest Videos" tab to search or import new videos.</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {uncalculatedJobs.map((job) => (
-              <div
-                key={job.video_id}
-                className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800 hover:border-slate-700 transition-all group flex flex-col justify-between"
-              >
-                <div>
-                  <div className="flex items-start justify-between gap-2">
-                    <span className="px-2 py-0.5 text-[11px] font-bold rounded-md bg-slate-800 text-slate-400 uppercase tracking-wider">
-                      {job.source}
-                    </span>
-                    <span className="px-2 py-0.5 text-[11px] font-semibold rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                      Trend Pending
-                    </span>
-                  </div>
-                  <h4 className="font-semibold text-slate-200 text-sm mt-2 line-clamp-2 group-hover:text-amber-300 transition-colors">
-                    {job.title || job.video_id}
-                  </h4>
-                  <p className="text-xs text-slate-500 mt-1">{job.channel || 'Unknown Channel'}</p>
-                </div>
-
-                <div className="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-400">
-                  <span className="font-mono text-[11px]">{job.video_id}</span>
-                  <a
-                    href={`https://youtube.com/watch?v=${job.video_id}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-amber-400 hover:text-amber-300 hover:underline flex items-center gap-1"
-                  >
-                    Watch
-                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                    </svg>
-                  </a>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Calculated Results / Live Rankings */}
-      {recentCalculations.length > 0 && (
-        <div className="bg-slate-900/60 border border-slate-800/80 rounded-3xl p-6 backdrop-blur-md">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-bold text-white flex items-center gap-2">
-              <svg className="w-5 h-5 text-amber-400" fill="currentColor" viewBox="0 0 20 20">
-                <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-              </svg>
-              <span>Recently Calculated Trend Ranks ({recentCalculations.length})</span>
-            </h3>
-
-            <button
-              onClick={onViewJobs}
-              className="text-xs font-semibold text-indigo-400 hover:text-indigo-300 hover:underline flex items-center gap-1"
-            >
-              <span>View in Job Queue</span>
-              <span>→</span>
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {recentCalculations.map((v) => (
-              <div
-                key={v.video_id}
-                className="p-5 rounded-2xl bg-gradient-to-b from-slate-950 to-slate-900 border border-amber-500/30 hover:border-amber-500/60 shadow-lg shadow-amber-500/5 transition-all flex flex-col justify-between"
-              >
-                <div>
-                  <div className="flex items-center justify-between">
-                    <span className="font-mono text-xs text-slate-500">{v.video_id}</span>
-                    <span className="px-2.5 py-1 rounded-full text-xs font-black bg-amber-400 text-slate-950 shadow-md shadow-amber-400/20">
-                      ★ {v.trend_score.toFixed(4)}
-                    </span>
-                  </div>
-
-                  <h4 className="font-bold text-white text-sm mt-2 line-clamp-2">{v.title}</h4>
-                  <p className="text-xs text-slate-400 mt-1">{v.channel}</p>
-                </div>
-
-                <div className="mt-4 pt-3 border-t border-slate-800 grid grid-cols-3 gap-2 text-center text-[11px]">
-                  <div className="bg-slate-950 p-1.5 rounded-lg border border-slate-800">
-                    <span className="text-slate-500 block">Views</span>
-                    <span className="font-semibold text-slate-200">
-                      {v.view_count ? Number(v.view_count).toLocaleString() : 'N/A'}
-                    </span>
-                  </div>
-                  <div className="bg-slate-950 p-1.5 rounded-lg border border-slate-800">
-                    <span className="text-slate-500 block">Likes</span>
-                    <span className="font-semibold text-slate-200">
-                      {v.like_count ? Number(v.like_count).toLocaleString() : 'N/A'}
-                    </span>
-                  </div>
-                  <div className="bg-slate-950 p-1.5 rounded-lg border border-slate-800">
-                    <span className="text-slate-500 block">Age (hrs)</span>
-                    <span className="font-semibold text-slate-200">{v.age_hours ? v.age_hours.toFixed(1) : 'N/A'}</span>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
+          <button
+            onClick={() => setErrorMessage(null)}
+            className="text-rose-400 hover:text-rose-200 text-xs font-semibold px-2 py-1 rounded-lg hover:bg-rose-500/20"
+          >
+            Dismiss
+          </button>
         </div>
       )}
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="p-5 rounded-2xl bg-slate-900/60 border border-slate-800 backdrop-blur-md">
+          <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">Total Videos</span>
+          <div className="flex items-baseline gap-2 mt-1">
+            <span className="text-3xl font-black text-white">{totalJobsCount}</span>
+            <span className="text-xs text-slate-500">in job.db</span>
+          </div>
+        </div>
+
+        <div className="p-5 rounded-2xl bg-slate-900/60 border border-slate-800 backdrop-blur-md">
+          <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">Scored Videos</span>
+          <div className="flex items-baseline gap-2 mt-1">
+            <span className="text-3xl font-black text-emerald-400">{rankedJobsCount}</span>
+            <span className="text-xs text-slate-500">/ {totalJobsCount}</span>
+          </div>
+        </div>
+
+        <div className="p-5 rounded-2xl bg-slate-900/60 border border-slate-800 backdrop-blur-md">
+          <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">Unscored Videos</span>
+          <div className="flex items-baseline gap-2 mt-1">
+            <span className={`text-3xl font-black ${unrankedJobsCount > 0 ? 'text-amber-400' : 'text-slate-400'}`}>
+              {unrankedJobsCount}
+            </span>
+            <span className="text-xs text-slate-500">pending</span>
+          </div>
+        </div>
+
+        <div className="p-5 rounded-2xl bg-slate-900/60 border border-slate-800 backdrop-blur-md">
+          <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">Peak Trend Score</span>
+          <div className="flex items-baseline gap-2 mt-1">
+            <span className="text-3xl font-black text-amber-400">
+              {maxTrendScore > 0 ? maxTrendScore.toFixed(3) : '—'}
+            </span>
+            <span className="text-xs text-slate-500">avg {avgTrendScore > 0 ? avgTrendScore.toFixed(2) : '—'}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Formula Explainer Toggle */}
+      <div className="rounded-2xl bg-slate-900/40 border border-slate-800/80 overflow-hidden">
+        <button
+          onClick={() => setShowFormulaDetails(!showFormulaDetails)}
+          className="w-full px-6 py-4 flex items-center justify-between text-left text-sm font-semibold text-slate-300 hover:text-white hover:bg-slate-800/40 transition-all"
+        >
+          <div className="flex items-center gap-2.5">
+            <svg className="w-4 h-4 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span>How is the Trend Score calculated?</span>
+          </div>
+          <span className="text-xs text-slate-400 font-mono">
+            {showFormulaDetails ? 'Hide details ▲' : 'Show formula ▼'}
+          </span>
+        </button>
+
+        {showFormulaDetails && (
+          <div className="px-6 pb-6 pt-2 border-t border-slate-800/60 space-y-3 text-xs text-slate-300">
+            <div className="p-3 rounded-xl bg-slate-950/80 font-mono text-amber-300 border border-slate-800">
+              Trend Score = log(Velocity + 1) × Engagement
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-slate-400">
+              <div className="p-3 rounded-xl bg-slate-950/40 border border-slate-800/50 space-y-1">
+                <span className="font-semibold text-slate-200 block">Velocity</span>
+                <p><code className="text-indigo-300">views / max(age_hours, 1.0)</code></p>
+                <p className="text-[11px]">Measures view velocity per hour since publication.</p>
+              </div>
+              <div className="p-3 rounded-xl bg-slate-950/40 border border-slate-800/50 space-y-1">
+                <span className="font-semibold text-slate-200 block">Engagement</span>
+                <p><code className="text-indigo-300">0.5 × like_rate + 0.3 × comment_rate + 0.2 × sub_velocity</code></p>
+                <p className="text-[11px]">Weighted ratio of likes, comments, and views relative to subscribers.</p>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Videos List Controls */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
+        {/* Search Input */}
+        <div className="relative flex-1">
+          <svg className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+          <input
+            type="text"
+            value={searchFilter}
+            onChange={(e) => setSearchFilter(e.target.value)}
+            placeholder="Search by title, channel, or video ID..."
+            className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-900/80 border border-slate-800 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-amber-500/60 transition-all"
+          />
+          {searchFilter && (
+            <button
+              onClick={() => setSearchFilter('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white text-xs"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+
+        {/* Sort dropdown */}
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-semibold text-slate-400 whitespace-nowrap">Sort by:</span>
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as 'score-desc' | 'score-asc' | 'title' | 'date')}
+            className="py-2.5 px-3 rounded-xl bg-slate-900/80 border border-slate-800 text-xs font-medium text-slate-200 focus:outline-none focus:border-amber-500/60"
+          >
+            <option value="score-desc">Trend Score (High → Low)</option>
+            <option value="score-asc">Trend Score (Low → High)</option>
+            <option value="title">Title (A → Z)</option>
+            <option value="date">Date Added (Newest)</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Videos List / Table */}
+      <div className="rounded-2xl bg-slate-900/60 border border-slate-800 overflow-hidden shadow-xl">
+        {filteredAndSortedJobs.length === 0 ? (
+          <div className="p-12 text-center space-y-3">
+            <svg className="w-12 h-12 text-slate-600 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.75 9.75l4.5 4.5m0-4.5l-4.5 4.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <p className="text-slate-400 font-medium">No videos found matching your filter.</p>
+            {totalJobsCount === 0 && (
+              <p className="text-xs text-slate-500">Ingest videos using the Ingest Videos tab to start calculating scores.</p>
+            )}
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm border-collapse">
+              <thead>
+                <tr className="border-b border-slate-800 bg-slate-950/60 text-slate-400 text-xs uppercase tracking-wider font-semibold">
+                  <th className="py-3.5 px-4 w-12 text-center">#</th>
+                  <th className="py-3.5 px-4">Video Details</th>
+                  <th className="py-3.5 px-4">Channel</th>
+                  <th className="py-3.5 px-4">Source</th>
+                  <th className="py-3.5 px-4 text-center">Trend Score</th>
+                  <th className="py-3.5 px-4 text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60">
+                {filteredAndSortedJobs.map((job, index) => {
+                  const hasScore = typeof job.trend_score === 'number';
+                  const score = job.trend_score ?? 0;
+                  const isRecalculatingThis = calculatingVideoId === job.video_id;
+
+                  return (
+                    <tr key={job.video_id} className="hover:bg-slate-800/30 transition-colors group">
+                      {/* Rank Index */}
+                      <td className="py-4 px-4 text-center text-xs font-mono font-bold text-slate-500">
+                        {index + 1}
+                      </td>
+
+                      {/* Video Details */}
+                      <td className="py-4 px-4">
+                        <div className="flex items-center gap-3 min-w-60">
+                          <img
+                            src={`https://img.youtube.com/vi/${job.video_id}/mqdefault.jpg`}
+                            alt={job.title || job.video_id}
+                            className="w-16 h-10 rounded-lg object-cover bg-slate-800 shrink-0 border border-slate-700/60"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).src =
+                                'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="64" height="40" viewBox="0 0 64 40"><rect width="64" height="40" fill="%231e293b"/></svg>';
+                            }}
+                          />
+                          <div className="space-y-0.5 overflow-hidden">
+                            <a
+                              href={`https://www.youtube.com/watch?v=${job.video_id}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="font-semibold text-slate-100 hover:text-amber-400 transition-colors line-clamp-1 block"
+                              title={job.title || job.video_id}
+                            >
+                              {job.title || job.video_id}
+                            </a>
+                            <span className="text-[11px] font-mono text-slate-500 block">
+                              ID: {job.video_id}
+                            </span>
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* Channel */}
+                      <td className="py-4 px-4 text-xs font-medium text-slate-300 whitespace-nowrap">
+                        {job.channel || '—'}
+                      </td>
+
+                      {/* Source */}
+                      <td className="py-4 px-4 whitespace-nowrap">
+                        <span
+                          className={`inline-block px-2.5 py-1 rounded-full text-[11px] font-semibold border ${
+                            job.source === 'search'
+                              ? 'bg-indigo-500/10 text-indigo-300 border-indigo-500/30'
+                              : 'bg-rose-500/10 text-rose-300 border-rose-500/30'
+                          }`}
+                        >
+                          {job.source}
+                        </span>
+                      </td>
+
+                      {/* Trend Score */}
+                      <td className="py-4 px-4 text-center whitespace-nowrap">
+                        {hasScore ? (
+                          <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-linear-to-r from-amber-500/15 via-rose-500/15 to-indigo-500/15 border border-amber-500/30">
+                            <span className="text-xs font-mono font-bold text-amber-300">
+                              {score.toFixed(4)}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="px-2.5 py-1 rounded-lg text-xs font-mono text-slate-500 bg-slate-800/60 border border-slate-700/50">
+                            Uncalculated
+                          </span>
+                        )}
+                      </td>
+
+                      {/* Action */}
+                      <td className="py-4 px-4 text-right whitespace-nowrap">
+                        <button
+                          onClick={() => handleRecalculateSingle(job.video_id)}
+                          disabled={isRecalculatingThis || isCalculating}
+                          className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-amber-600 text-slate-300 hover:text-white text-xs font-semibold transition-all border border-slate-700/80 disabled:opacity-50 disabled:cursor-not-allowed"
+                          title="Recalculate trend score for this video"
+                        >
+                          {isRecalculatingThis ? (
+                            <span className="flex items-center gap-1.5">
+                              <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                              </svg>
+                              <span>Calculating...</span>
+                            </span>
+                          ) : (
+                            'Recalculate'
+                          )}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 };
+
+export default TrendCalculatorSection;

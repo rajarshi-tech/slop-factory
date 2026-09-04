@@ -93,7 +93,7 @@ export const IngestionSection: React.FC<IngestionSectionProps> = ({
           onClick={() => setIngestionMode('search')}
           className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-sm font-semibold transition-all ${
             ingestionMode === 'search'
-              ? 'bg-gradient-to-r from-indigo-600 to-indigo-700 text-white shadow-lg shadow-indigo-600/30'
+              ? 'bg-linear-to-r from-indigo-600 to-indigo-700 text-white shadow-lg shadow-indigo-600/30'
               : 'text-slate-400 hover:text-white'
           }`}
         >
@@ -107,7 +107,7 @@ export const IngestionSection: React.FC<IngestionSectionProps> = ({
           onClick={() => setIngestionMode('url')}
           className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-sm font-semibold transition-all ${
             ingestionMode === 'url'
-              ? 'bg-gradient-to-r from-rose-600 to-rose-700 text-white shadow-lg shadow-rose-600/30'
+              ? 'bg-linear-to-r from-rose-600 to-rose-700 text-white shadow-lg shadow-rose-600/30'
               : 'text-slate-400 hover:text-white'
           }`}
         >
@@ -157,7 +157,7 @@ export const IngestionSection: React.FC<IngestionSectionProps> = ({
               <button
                 type="submit"
                 disabled={isSearching || !query.trim()}
-                className="px-8 py-4 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white font-semibold rounded-2xl shadow-lg shadow-indigo-600/30 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
+                className="px-8 py-4 bg-linear-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white font-semibold rounded-2xl shadow-lg shadow-indigo-600/30 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
               >
                 {isSearching ? (
                   <>
@@ -256,7 +256,7 @@ export const IngestionSection: React.FC<IngestionSectionProps> = ({
               <button
                 type="submit"
                 disabled={isSubmittingUrl || !url.trim()}
-                className="px-8 py-4 bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white font-semibold rounded-2xl shadow-lg shadow-rose-600/30 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
+                className="px-8 py-4 bg-linear-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white font-semibold rounded-2xl shadow-lg shadow-rose-600/30 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
               >
                 {isSubmittingUrl ? (
                   <>
