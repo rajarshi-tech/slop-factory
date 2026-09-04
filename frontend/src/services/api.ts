@@ -1,15 +1,15 @@
 /**
- * API Service for communicating with the backend config routes
- * All API calls to the backend are centralized here
+ * API Service for Slop Factory Frontend
+ * Centralizes all REST endpoints and WebSocket definitions.
  */
 
 import axios from 'axios';
 
-// Base URL for the backend API
-const API_BASE_URL = 'http://localhost:8000/api/config';
+// Base URLs
+export const API_BASE_URL = 'http://localhost:8000';
+export const WS_BASE_URL = 'ws://localhost:8000';
 
-// Create axios instance with default config
-const api = axios.create({
+const client = axios.create({
   baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
@@ -17,16 +17,14 @@ const api = axios.create({
 });
 
 /**
- * Interface definitions for type safety
+ * Type Definitions
  */
 
-// Provider availability status
 export interface ProviderStatus {
   available: boolean;
   status: string;
 }
 
-// Provider check response
 export interface ProvidersResponse {
   providers: {
     ollama: ProviderStatus;
@@ -37,7 +35,6 @@ export interface ProvidersResponse {
   config_updated: boolean;
 }
 
-// Model structure
 export interface ModelsResponse {
   llm: {
     provider: {
@@ -50,7 +47,6 @@ export interface ModelsResponse {
   message?: string;
 }
 
-// Parameter options from backend
 export interface ParamOptions {
   order: string[];
   maxResults: {
@@ -70,7 +66,6 @@ export interface ParamOptions {
   safeSearch: string[];
 }
 
-// Search parameters
 export interface SearchParams {
   q: string;
   order: string;
@@ -89,13 +84,11 @@ export interface SearchParams {
   safeSearch: string;
 }
 
-// LLM configuration
 export interface LLMConfig {
   provider: string | null;
   model: string | null;
 }
 
-// Full config response
 export interface FullConfig {
   details: {
     llm: {
@@ -111,58 +104,156 @@ export interface FullConfig {
   params: SearchParams;
 }
 
-/**
- * API Functions
- */
+export interface Job {
+  id: number;
+  video_id: string;
+  title: string | null;
+  channel: string | null;
+  source: 'search' | 'direct_url' | string;
+  trend_score: number | null;
+  job_status: 'queued' | 'downloading' | 'downloaded' | 'transcribing' | 'generating_clips' | 'completed' | 'failed' | string;
+  processing_state: 'pending' | 'processed' | 'rejected' | 'failed' | string;
+  video_state: 'in_queue' | 'active' | 'archived' | string;
+  progress: number;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SearchResponse {
+  jobs: Job[];
+  count: number;
+  errors?: string[];
+  message?: string;
+}
+
+export interface DirectURLResponse {
+  job: Job;
+  message: string;
+  created: boolean;
+}
+
+export interface CalculatedVideo {
+  video_id: string;
+  title: string;
+  channel: string;
+  source?: string;
+  trend_score: number;
+  view_count?: number;
+  like_count?: number;
+  comment_count?: number;
+  subscriber_count?: number;
+  age_hours?: number;
+  job?: Job;
+}
+
+export interface TrendCalculateResponse {
+  status: string;
+  calculated_count: number;
+  jobs: CalculatedVideo[];
+  message: string;
+  errors?: string[];
+}
+
+export interface UncalculatedTrendsResponse {
+  uncalculated_count: number;
+  source: string;
+  jobs: Job[];
+}
+
+export interface HealthResponse {
+  status: string;
+}
 
 /**
- * Get the full configuration from backend
+ * API Methods
  */
+
+// Health
+export const checkHealth = async (): Promise<HealthResponse> => {
+  const response = await client.get('/api/health');
+  return response.data;
+};
+
+// Config
 export const getConfig = async (): Promise<FullConfig> => {
-  const response = await api.get('');
+  const response = await client.get('/api/config');
   return response.data;
 };
 
-/**
- * Check available providers (Ollama, Gemini)
- * This updates the config.json to only include available providers
- */
 export const checkProviders = async (): Promise<ProvidersResponse> => {
-  const response = await api.get('/llm/providers');
+  const response = await client.get('/api/config/llm/providers');
   return response.data;
 };
 
-/**
- * Check available models for all available providers
- * This fetches models from each provider and updates config.json
- */
 export const checkModels = async (): Promise<ModelsResponse> => {
-  const response = await api.get('/llm/models');
+  const response = await client.get('/api/config/llm/models');
   return response.data;
 };
 
-/**
- * Get parameter options (available choices for each parameter)
- */
 export const getParamOptions = async (): Promise<ParamOptions> => {
-  const response = await api.get('/llm/params/options');
+  const response = await client.get('/api/config/llm/params/options');
   return response.data;
 };
 
-/**
- * Update LLM configuration (provider and model selection)
- */
 export const updateLLMConfig = async (config: LLMConfig): Promise<LLMConfig> => {
-  const response = await api.put('/llm/configure', config);
+  const response = await client.put('/api/config/llm/configure', config);
   return response.data;
 };
 
-/**
- * Update search parameters
- */
 export const updateSearchParams = async (params: SearchParams): Promise<SearchParams> => {
-  const response = await api.put('/llm/params', params);
+  const response = await client.put('/api/config/llm/params', params);
   return response.data;
 };
 
-export default api;
+// Search (Ingestion Method 1)
+export const searchVideos = async (
+  q: string,
+  overrideParams?: Partial<SearchParams>
+): Promise<SearchResponse> => {
+  const response = await client.post('/api/search', {
+    q,
+    overrideParams,
+  });
+  return response.data;
+};
+
+// Direct URL (Ingestion Method 2)
+export const createJobFromUrl = async (url: string): Promise<DirectURLResponse> => {
+  const response = await client.post('/api/jobs', { url });
+  return response.data;
+};
+
+// Job Queue
+export const getJobs = async (): Promise<{ jobs: Job[]; count: number }> => {
+  const response = await client.get('/api/jobs');
+  return response.data;
+};
+
+export const getJobById = async (videoId: string): Promise<Job> => {
+  const response = await client.get(`/api/jobs/${videoId}`);
+  return response.data;
+};
+
+// Trend Calculation
+export const getUncalculatedTrends = async (
+  source: string = 'search'
+): Promise<UncalculatedTrendsResponse> => {
+  const response = await client.get('/api/trend/uncalculated', {
+    params: { source },
+  });
+  return response.data;
+};
+
+export const calculateTrends = async (
+  source: string = 'search',
+  video_ids?: string[]
+): Promise<TrendCalculateResponse> => {
+  const response = await client.post('/api/trend/calculate', {
+    source,
+    video_ids,
+  });
+  return response.data;
+};
+
+export default client;

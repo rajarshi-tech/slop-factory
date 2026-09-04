@@ -1,3 +1,4 @@
+from typing import Optional
 from app.database import get_db
 from datetime import datetime
 
@@ -22,7 +23,7 @@ def create_tables():
         direct_url
         */
 
-        trend_score REAL DEFAULT 0,
+        trend_score REAL DEFAULT NULL,
 
         job_status TEXT NOT NULL DEFAULT 'queued',
         /*
@@ -67,7 +68,7 @@ def create_tables():
     db.close()
 
 
-def insert_job(video_id: str, title: str, channel: str, source: str, trend_score: float = 0.0):
+def insert_job(video_id: str, title: str, channel: str, source: str, trend_score: Optional[float] = None):
     """
     Insert a new job into the database.
 
@@ -76,7 +77,7 @@ def insert_job(video_id: str, title: str, channel: str, source: str, trend_score
         title: Video title
         channel: Channel name
         source: 'search' or 'direct_url'
-        trend_score: Trend score (default 0.0)
+        trend_score: Trend score (default None)
 
     Returns:
         dict: The created job
@@ -170,6 +171,31 @@ def get_all_jobs():
     jobs = db.execute(
         "SELECT * FROM jobs ORDER BY created_at DESC"
     ).fetchall()
+    db.close()
+
+    return [dict(job) for job in jobs]
+
+
+def get_uncalculated_jobs(source: Optional[str] = "search"):
+    """
+    Get jobs whose trend score has not been calculated yet.
+
+    Args:
+        source: Optional source filter ('search', 'direct_url', or None for all)
+
+    Returns:
+        List of uncalculated job dicts ordered by created_at ASC
+    """
+    db = get_db()
+    if source:
+        jobs = db.execute(
+            "SELECT * FROM jobs WHERE source = ? AND trend_score IS NULL ORDER BY created_at ASC",
+            (source,)
+        ).fetchall()
+    else:
+        jobs = db.execute(
+            "SELECT * FROM jobs WHERE trend_score IS NULL ORDER BY created_at ASC"
+        ).fetchall()
     db.close()
 
     return [dict(job) for job in jobs]

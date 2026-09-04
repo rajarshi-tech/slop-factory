@@ -1,22 +1,26 @@
-/**
- * Main App Component
- * Integrates all components and manages the application state
- * Layout: Search bar at top, config section and param controls side by side
- */
-
-import { useEffect, useState } from 'react';
-import SearchBar from './components/SearchBar';
+import { useEffect, useState, useRef, useCallback } from 'react';
+import { Navbar } from './components/Navbar';
+import type { TabType } from './components/Navbar';
+import { IngestionSection } from './components/IngestionSection';
+import { TrendCalculatorSection } from './components/TrendCalculatorSection';
+import { JobQueueSection } from './components/JobQueueSection';
 import ConfigSection from './components/ConfigSection';
 import ParamControls from './components/ParamControls';
-import { getConfig, updateSearchParams } from './services/api';
-import type { LLMConfig, SearchParams } from './services/api';
-import './App.css';
+import {
+  getConfig,
+  updateSearchParams,
+  getJobs,
+  getUncalculatedTrends,
+  checkHealth,
+  WS_BASE_URL,
+} from './services/api';
+import type { Job, LLMConfig, SearchParams } from './services/api';
 
 function App() {
-  // State for configuration
-  const [llmConfig, setLlmConfig] = useState<LLMConfig>({ provider: null, model: null });
+  const [activeTab, setActiveTab] = useState<TabType>('ingestion');
 
-  // State for search parameters with defaults
+  // Configuration state
+  const [llmConfig, setLlmConfig] = useState<LLMConfig>({ provider: null, model: null });
   const [searchParams, setSearchParams] = useState<SearchParams>({
     q: '',
     order: 'viewCount',
@@ -35,159 +39,242 @@ function App() {
     safeSearch: 'moderate',
   });
 
-  const [isSearching, setIsSearching] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // Jobs state
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [isLoadingJobs, setIsLoadingJobs] = useState<boolean>(false);
+  const [uncalculatedCount, setUncalculatedCount] = useState<number>(0);
+
+  // Status state
+  const [isBackendHealthy, setIsBackendHealthy] = useState<boolean>(false);
+  const [isWsConnected, setIsWsConnected] = useState<boolean>(false);
+
+  const wsRef = useRef<WebSocket | null>(null);
 
   /**
-   * Load initial configuration on mount
+   * Fetch all initial data
    */
-  useEffect(() => {
-    loadInitialConfig();
+  const loadData = useCallback(async () => {
+    try {
+      const health = await checkHealth();
+      setIsBackendHealthy(health.status === 'ok');
+    } catch {
+      setIsBackendHealthy(false);
+    }
+
+    try {
+      const config = await getConfig();
+      if (config.llm) setLlmConfig(config.llm);
+      if (config.params) setSearchParams(config.params);
+    } catch (err) {
+      console.error('Failed to load config:', err);
+    }
+
+    try {
+      setIsLoadingJobs(true);
+      const jobsRes = await getJobs();
+      setJobs(jobsRes.jobs || []);
+    } catch (err) {
+      console.error('Failed to load jobs:', err);
+    } finally {
+      setIsLoadingJobs(false);
+    }
+
+    try {
+      const uncalcRes = await getUncalculatedTrends('search');
+      setUncalculatedCount(uncalcRes.uncalculated_count || 0);
+    } catch (err) {
+      console.error('Failed to fetch uncalculated count:', err);
+    }
   }, []);
 
   /**
-   * Fetch the full config from backend to get default values
+   * Set up WebSocket connection for live job streaming
    */
-  const loadInitialConfig = async () => {
+  const connectWebSocket = useCallback(() => {
     try {
-      const config = await getConfig();
+      const socket = new WebSocket(`${WS_BASE_URL}/ws/jobs`);
 
-      // Set LLM config
-      setLlmConfig(config.llm);
+      socket.onopen = () => {
+        setIsWsConnected(true);
+        // Send initial heartbeat to request jobs
+        socket.send('ping');
+      };
 
-      // Set search parameters from config
-      setSearchParams(config.params);
-    } catch (err) {
-      console.error('Failed to load initial config:', err);
-      setError('Failed to load initial configuration. Using defaults.');
+      socket.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data && Array.isArray(data.jobs)) {
+            setJobs(data.jobs);
+            // Count uncalculated
+            const uncalc = data.jobs.filter(
+              (j: Job) => j.source === 'search' && (j.trend_score === null || j.trend_score === undefined)
+            ).length;
+            setUncalculatedCount(uncalc);
+          }
+        } catch (err) {
+          console.error('Error parsing WebSocket data:', err);
+        }
+      };
+
+      socket.onerror = () => {
+        setIsWsConnected(false);
+      };
+
+      socket.onclose = () => {
+        setIsWsConnected(false);
+        // Try reconnecting after 5 seconds
+        setTimeout(() => {
+          connectWebSocket();
+        }, 5000);
+      };
+
+      wsRef.current = socket;
+    } catch {
+      setIsWsConnected(false);
     }
-  };
+  }, []);
 
-  /**
-   * Handle LLM configuration update
-   */
+  useEffect(() => {
+    loadData();
+    connectWebSocket();
+
+    // Polling fallback
+    const interval = setInterval(() => {
+      loadData();
+    }, 15000);
+
+    return () => {
+      clearInterval(interval);
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
+    };
+  }, [loadData, connectWebSocket]);
+
   const handleConfigUpdate = (config: LLMConfig) => {
     setLlmConfig(config);
   };
 
-  /**
-   * Handle search parameters change
-   */
   const handleParamsChange = (params: Partial<SearchParams>) => {
     setSearchParams((prev) => ({ ...prev, ...params }));
   };
 
-  /**
-   * Handle save parameters separately (without searching)
-   * If search query is empty, uses default value
-   */
   const handleParamsSave = async (params: SearchParams) => {
-    try {
-      // If query is empty, use default or keep existing
-      const paramsToSave: SearchParams = {
-        ...params,
-        q: params.q || searchParams.q || 'life without the internet',
-      };
+    await updateSearchParams(params);
+    setSearchParams(params);
+  };
 
-      // Send to backend - this updates config.json with all params
-      await updateSearchParams(paramsToSave);
-
-      // Update local state
-      setSearchParams(paramsToSave);
-
-      console.log('Parameters saved:', paramsToSave);
-    } catch (err) {
-      throw new Error(`Failed to save parameters: ${err instanceof Error ? err.message : 'Unknown error'}`);
+  const handleJobCreated = (newJob: Job) => {
+    setJobs((prev) => [newJob, ...prev.filter((j) => j.video_id !== newJob.video_id)]);
+    if (newJob.source === 'search' && newJob.trend_score === null) {
+      setUncalculatedCount((c) => c + 1);
     }
   };
 
-  /**
-   * Handle search submission
-   * Sends the search query along with all parameters to the backend
-   */
-  const handleSearch = async (query: string) => {
-    setIsSearching(true);
-    setError(null);
-
-    try {
-      // Update the query in search params
-      const finalParams: SearchParams = {
-        ...searchParams,
-        q: query,
-      };
-
-      // Send to backend - this updates config.json with all params
-      await updateSearchParams(finalParams);
-
-      console.log('Search submitted with params:', finalParams);
-
-      // TODO: Implement actual search functionality
-      // This would typically call another endpoint that performs the search
-      alert(`Search submitted successfully!\nQuery: ${query}\nProvider: ${llmConfig.provider}\nModel: ${llmConfig.model}`);
-
-    } catch (err) {
-      setError(`Search failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
-    } finally {
-      setIsSearching(false);
-    }
+  const handleSearchCompleted = (newJobs: Job[]) => {
+    setJobs((prev) => {
+      const existingIds = new Set(newJobs.map((j) => j.video_id));
+      return [...newJobs, ...prev.filter((j) => !existingIds.has(j.video_id))];
+    });
+    setUncalculatedCount((c) => c + newJobs.length);
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 py-4">
-          <h1 className="text-2xl font-bold text-gray-900">YouTube Search with AI</h1>
-        </div>
-      </header>
+    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-indigo-500 selection:text-white pb-16">
+      {/* Navigation Bar */}
+      <Navbar
+        activeTab={activeTab}
+        onSelectTab={setActiveTab}
+        isBackendHealthy={isBackendHealthy}
+        isWsConnected={isWsConnected}
+        uncalculatedCount={uncalculatedCount}
+        activeJobCount={jobs.filter((j) => ['queued', 'downloading', 'transcribing'].includes(j.job_status)).length}
+      />
 
-      {/* Main content */}
-      <main className="max-w-7xl mx-auto px-4 py-8">
-        {/* Error message */}
-        {error && (
-          <div className="mb-6 p-4 bg-red-50 text-red-700 rounded-lg">
-            {error}
+      {/* Main Content Area */}
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8">
+        {/* TAB 1: INGESTION */}
+        {activeTab === 'ingestion' && (
+          <div className="space-y-8 animate-fadeIn">
+            <IngestionSection
+              currentParams={searchParams}
+              onJobCreated={handleJobCreated}
+              onSearchCompleted={handleSearchCompleted}
+            />
+
+            {/* Quick stats banner */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="p-5 rounded-2xl bg-slate-900/60 border border-slate-800/80 backdrop-blur-md">
+                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">Total Database Jobs</span>
+                <span className="text-3xl font-black text-white mt-1 block">{jobs.length}</span>
+              </div>
+
+              <div
+                onClick={() => setActiveTab('trends')}
+                className="p-5 rounded-2xl bg-gradient-to-tr from-slate-900/60 to-amber-950/20 border border-amber-500/20 backdrop-blur-md cursor-pointer hover:border-amber-500/40 transition-all group"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-amber-300 uppercase tracking-wider block">Pending Trend Scores</span>
+                  <span className="text-xs text-amber-400 group-hover:translate-x-1 transition-transform">Calculate →</span>
+                </div>
+                <span className="text-3xl font-black text-amber-400 mt-1 block">{uncalculatedCount}</span>
+              </div>
+
+              <div
+                onClick={() => setActiveTab('settings')}
+                className="p-5 rounded-2xl bg-slate-900/60 border border-slate-800/80 backdrop-blur-md cursor-pointer hover:border-slate-700 transition-all group"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">Active LLM Model</span>
+                  <span className="text-xs text-slate-400 group-hover:translate-x-1 transition-transform">Edit →</span>
+                </div>
+                <span className="text-sm font-bold text-slate-200 mt-2 block truncate">
+                  {llmConfig.provider ? `${llmConfig.provider.toUpperCase()} / ${llmConfig.model}` : 'Not configured'}
+                </span>
+              </div>
+            </div>
           </div>
         )}
 
-        {/* Search bar - full width at top */}
-        <SearchBar
-          onSearch={handleSearch}
-          defaultQuery={searchParams.q}
-          isLoading={isSearching}
-        />
-
-        {/* Configuration and parameters - side by side */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Left column - LLM Configuration */}
-          <div>
-            <ConfigSection onConfigUpdate={handleConfigUpdate} />
-          </div>
-
-          {/* Right column - Search Parameters */}
-          <div>
-            <ParamControls
-              onParamsChange={handleParamsChange}
-              onParamsSave={handleParamsSave}
-              defaultParams={searchParams}
+        {/* TAB 2: TREND RANKINGS */}
+        {activeTab === 'trends' && (
+          <div className="space-y-8 animate-fadeIn">
+            <TrendCalculatorSection
+              uncalculatedCount={uncalculatedCount}
+              onRefreshNeeded={loadData}
+              onViewJobs={() => setActiveTab('jobs')}
             />
           </div>
-        </div>
+        )}
 
-        {/* Current configuration display */}
-        <div className="mt-6 p-4 bg-white rounded-lg shadow-md">
-          <h3 className="font-bold text-lg mb-2">Current Configuration</h3>
-          <div className="grid grid-cols-2 gap-4 text-sm">
-            <div>
-              <span className="font-medium">Provider:</span>{' '}
-              <span className="text-gray-700">{llmConfig.provider || 'Not set'}</span>
-            </div>
-            <div>
-              <span className="font-medium">Model:</span>{' '}
-              <span className="text-gray-700">{llmConfig.model || 'Not set'}</span>
+        {/* TAB 3: JOB QUEUE */}
+        {activeTab === 'jobs' && (
+          <div className="space-y-8 animate-fadeIn">
+            <JobQueueSection
+              jobs={jobs}
+              isLoading={isLoadingJobs}
+              onRefresh={loadData}
+              isWsConnected={isWsConnected}
+            />
+          </div>
+        )}
+
+        {/* TAB 4: SETTINGS & PARAMETERS */}
+        {activeTab === 'settings' && (
+          <div className="space-y-8 animate-fadeIn">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <ConfigSection
+                onConfigUpdate={handleConfigUpdate}
+                currentConfig={llmConfig}
+              />
+              <ParamControls
+                onParamsChange={handleParamsChange}
+                onParamsSave={handleParamsSave}
+                defaultParams={searchParams}
+              />
             </div>
           </div>
-        </div>
+        )}
       </main>
     </div>
   );

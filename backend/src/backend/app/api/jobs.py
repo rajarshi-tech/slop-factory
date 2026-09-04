@@ -74,6 +74,7 @@ async def get_job_by_id(video_id: str):
 
 
 @router.post("")
+@router.post("/url")
 async def create_job_from_url(request: DirectURLRequest):
     """
     Create a job from a direct YouTube URL.
@@ -176,7 +177,7 @@ async def create_job_from_url(request: DirectURLRequest):
             title=snippet["title"],
             channel=snippet["channelTitle"],
             source="direct_url",
-            trend_score=0.0
+            trend_score=None
         )
 
         return {

@@ -13,3 +13,19 @@ WARNING:  WatchFiles detected changes in 'src\backend\app\pipeline\youtube\scrap
 Trend scores calculated for 10 videos...
 INFO:     127.0.0.1:49670 - "POST /api/search HTTP/1.1" 200 OK
 INFO:     127.0.0.1:59450 - "POST /api/jobs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61575 - "GET /api/trend/uncalculated HTTP/1.1" 404 Not Found
+WARNING:  WatchFiles detected changes in 'src\backend\app\api\trend.py', 'src\backend\app\init_db.py', 'src\backend\app\main.py', 'src\backend\app\api\search.py', 'src\backend\app\api\jobs.py', 'src\backend\app\pipeline\youtube\trendCalculator.py'. Reloading...
+ INFO:     Started server process [22192]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     127.0.0.1:51915 - "GET /api/trend/uncalculated HTTP/1.1" 200 OK
+Trend scores calculated for 0 uncalculated videos...
+INFO:     127.0.0.1:50747 - "POST /api/trend/calculate HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58496 - "POST /api/search HTTP/1.1" 422 Unprocessable Entity
+10 videos gathered...
+INFO:     127.0.0.1:53704 - "POST /api/search HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60854 - "GET /api/trend/uncalculated HTTP/1.1" 200 OK
+Trend scores calculated for 10 uncalculated videos...
+INFO:     127.0.0.1:53168 - "POST /api/trend/calculate HTTP/1.1" 200 OK
+Trend scores calculated for 0 uncalculated videos...
+INFO:     127.0.0.1:59983 - "POST /api/trend/calculate HTTP/1.1" 200 OK

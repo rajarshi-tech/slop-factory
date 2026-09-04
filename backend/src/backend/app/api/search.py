@@ -4,7 +4,6 @@ from pydantic import BaseModel
 from typing import Optional
 
 from app.pipeline.youtube.scraper import scrape
-from app.pipeline.youtube.trendCalculator import generateList
 from app.init_db import insert_job
 from app.utils.storage import youtube_config_dir
 
@@ -20,7 +19,7 @@ class SearchRequest(BaseModel):
 @router.post("")
 async def search_videos(request: SearchRequest):
     """
-    Execute YouTube search, calculate trend scores, and create jobs.
+    Execute YouTube search and create jobs in database (trends calculated in separate route).
 
     Args:
         request: SearchRequest with query and optional parameter overrides
@@ -57,30 +56,28 @@ async def search_videos(request: SearchRequest):
                 "message": "No videos found for query"
             }
 
-        # Calculate trend scores
-        videos_with_trends = generateList(search_results)
-
-        # Insert jobs into database
+        # Insert jobs into database without calculating trends yet
         created_jobs = []
         errors = []
 
-        for video in videos_with_trends:
+        for video in search_results:
+            video_id = video.get("id") or video.get("video_id")
             try:
                 job = insert_job(
-                    video_id=video["video_id"],
+                    video_id=video_id,
                     title=video["title"],
                     channel=video["channel"],
                     source="search",
-                    trend_score=video["trend_score"]
+                    trend_score=None
                 )
                 created_jobs.append(job)
             except Exception as e:
                 # Handle duplicate video_id or other errors
                 error_msg = str(e)
                 if "UNIQUE constraint failed" in error_msg:
-                    errors.append(f"Video {video['video_id']} already exists")
+                    errors.append(f"Video {video_id} already exists")
                 else:
-                    errors.append(f"Failed to create job for {video['video_id']}: {error_msg}")
+                    errors.append(f"Failed to create job for {video_id}: {error_msg}")
 
         response = {
             "jobs": created_jobs,
