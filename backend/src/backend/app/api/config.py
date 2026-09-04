@@ -371,14 +371,14 @@ def check_models():
 
 
 #get applicable param options
-@router.get("/llm/params/options")
+@router.get("/search/params/options")
 def get_param_options():
     config = load_config()
     return config["details"]["params"]
 
 
 #set all param options
-@router.put("/llm/params")
+@router.put("/search/params")
 def set_patams(params: dict):
     config = load_config()
     config["params"]["q"] = params.get("q")

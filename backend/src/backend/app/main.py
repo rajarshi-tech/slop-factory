@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import config, jobs
+from app.api import config, jobs, search
 
 
 app = FastAPI(
@@ -36,13 +36,17 @@ app.include_router(
     tags=["Config"],
 )
 
+app.include_router(
+    search.router,
+    prefix="/api/search",
+    tags=["Search"],
+)
 
 app.include_router(
     jobs.router,
     prefix="/api/jobs",
     tags=["Jobs"],
 )
-
 
 app.include_router(
     jobs.router,

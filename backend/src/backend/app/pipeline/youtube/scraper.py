@@ -1,17 +1,24 @@
 from app.core.config import YOUTUBE_API_KEY
 from googleapiclient.discovery import build
-from app.utils.storage import youtube_config_dir, youtube_links_dir, youtube_video_dir
+from app.utils.storage import youtube_config_dir, youtube_video_dir
 import json
 import isodate
 
-def scrape():
-    config_dir = youtube_config_dir()
-    links_dir = youtube_links_dir()
+def scrape(params: dict = None):
+    """
+    Search YouTube and return video data.
 
-    with open(str(config_dir / "config.json"), "r") as file:
-        config = json.load(file)
+    Args:
+        params: Optional dict of search parameters. If None, loads from config.json
 
-    params = config["params"]
+    Returns:
+        List of video dicts with metadata
+    """
+    if params is None:
+        config_dir = youtube_config_dir()
+        with open(str(config_dir / "config.json"), "r") as file:
+            config = json.load(file)
+        params = config["params"]
 
     youtube = build(
         "youtube",
@@ -31,11 +38,17 @@ def scrape():
         "relevanceLanguage": "en"
     }
 
+    # Only include date filters if they are valid ISO 8601 strings with timezone
     if params.get("publishedAfter"):
-        request_params["publishedAfter"] = params["publishedAfter"]
+        date_str = params["publishedAfter"]
+        # Ensure it ends with Z or has timezone info
+        if date_str and (date_str.endswith('Z') or '+' in date_str or date_str.count(':') >= 3):
+            request_params["publishedAfter"] = date_str
 
     if params.get("publishedBefore"):
-        request_params["publishedBefore"] = params["publishedBefore"]
+        date_str = params["publishedBefore"]
+        if date_str and (date_str.endswith('Z') or '+' in date_str or date_str.count(':') >= 3):
+            request_params["publishedBefore"] = date_str
 
     if params.get("videoCategoryId"):
             request_params["videoCategoryId"] = params["videoCategoryId"]
@@ -183,19 +196,8 @@ def scrape():
         video_dir = youtube_video_dir(video_id)
 
         with open(str(video_dir / "metadata.json"), "w", encoding="utf-8") as file:
-            json.dump(metadata, file)
-
-    # 4. Save to JSON
-    with open(
-        str(links_dir / "search-results.json"),
-        "w",
-        encoding="utf-8"
-    ) as file:
-        json.dump(
-            videos,
-            file,
-            indent=4,
-            ensure_ascii=False
-        )
+            json.dump(metadata, file, indent=4, ensure_ascii=False)
 
     print(f"{len(videos)} videos gathered...")
+
+    return videos

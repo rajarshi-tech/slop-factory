@@ -1,5 +1,5 @@
 import json
-from app.utils.storage import youtube_links_dir, youtube_video_dir
+from app.utils.storage import youtube_video_dir
 from datetime import datetime, timezone
 import math
 
@@ -43,13 +43,18 @@ def updateMetadata(id, trend_score):
         json.dump(metadata, f, indent=4, ensure_ascii=False)
 
 def generateList(searchResults):
+    """
+    Calculate trend scores for videos and update their metadata.
 
-    links = []
+    Args:
+        searchResults: List of video dicts from scraper
 
-    trend_scores =[]
+    Returns:
+        List of video dicts with trend_score added
+    """
+    videos_with_trends = []
 
     for item in searchResults:
-
         link = item["link"]
         video_id = item["id"]
         title = item["title"]
@@ -62,29 +67,16 @@ def generateList(searchResults):
         age_hours = calculateAgeHours(item["published_at"])
 
         trend_score = calculateRank(view_count, age_hours, like_count, comment_count, subscriber_count)
-        
-        trend_scores.append(trend_score)
 
         updateMetadata(video_id, trend_score)
 
-        links.append({
+        videos_with_trends.append({
             "link": link,
             "video_id": video_id,
             "title": title,
             "channel": channel,
             "trend_score": trend_score
         })
-        
 
-    return links
-
-def calculateTrend():
-    links_dir = youtube_links_dir()
-    with open(str(links_dir / "search-results.json"), "r", encoding="utf-8") as file:
-        searchResults = json.load(file)
-
-    links = generateList(searchResults)
-
-    with open(str(links_dir / "ranked-videos.json"), "w", encoding="utf-8") as file:
-        json.dump(links, file, indent=4, ensure_ascii=False)
-    print("trends ranked...")
+    print(f"Trend scores calculated for {len(videos_with_trends)} videos...")
+    return videos_with_trends
