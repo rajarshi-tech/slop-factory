@@ -15,12 +15,15 @@
 │   │   │   ├── jobs.py             # Direct URL ingestion & Job queue (/api/jobs, /ws/jobs)
 │   │   │   └── trend.py            # Trend calculation for unranked videos (/api/trend)
 │   │   ├── core/config.py          # API keys (YOUTUBE_API_KEY, GEMINI_API_KEY)
+│   │   ├── llm/factory.py          # LLM provider abstraction (Ollama / Gemini)
 │   │   ├── pipeline/youtube/
 │   │   │   ├── scraper.py          # YouTube search scraper (metadata.json generation)
-│   │   │   ├── trendCalculator.py  # Trend rank calculation (views, age, likes, comments, subs)
+│   │   │   ├── trendCalculator.py  # Trend rank: log(velocity+1) × engagement
 │   │   │   ├── downloader.py       # Video downloader (yt-dlp)
-│   │   │   ├── transcript.py       # Audio transcription & alignment (WhisperX)
-│   │   │   └── processor.py        # Video clip generation and formatting
+│   │   │   ├── transcript.py       # Audio transcription & alignment (WhisperX large-v3)
+│   │   │   ├── processor.py        # LLM clip generation
+│   │   │   └── pipeline.py         # Legacy interactive CLI runner (not API-wired)
+│   │   ├── utils/storage.py        # Filesystem path helpers
 │   │   ├── database.py             # SQLite connection (storage/youtube/database/job.db)
 │   │   ├── init_db.py              # Schema definition & job DB operations
 │   │   └── main.py                 # FastAPI application entrypoint with CORS & WS
@@ -28,8 +31,15 @@
 │
 ├── frontend/
 │   ├── src/
-│   │   ├── components/             # React UI components (Tailwind v4)
-│   │   ├── services/api.ts         # Axios API client & WebSocket definitions
+│   │   ├── components/
+│   │   │   ├── ConfigSection.tsx       # LLM provider/model selector
+│   │   │   ├── IngestionSection.tsx    # Search & direct URL ingestion UI
+│   │   │   ├── JobQueueSection.tsx     # Live job queue table
+│   │   │   ├── Navbar.tsx
+│   │   │   ├── ParamControls.tsx       # Search parameter editor panel
+│   │   │   ├── SearchBar.tsx
+│   │   │   └── TrendCalculatorSection.tsx
+│   │   ├── services/api.ts         # Axios API client, TypeScript types, all API calls
 │   │   ├── App.tsx                 # Main application dashboard
 │   │   └── main.tsx
 │   ├── package.json
@@ -37,7 +47,7 @@
 │
 └── storage/
     └── youtube/
-        ├── content/{video_id}/     # Video artifacts & metadata.json
+        ├── content/{video_id}/     # Per-video artifacts & metadata.json
         ├── database/job.db         # SQLite jobs database
         └── config/config.json      # Current YouTube & LLM config
 ```
@@ -49,7 +59,11 @@
 ### Backend (FastAPI)
 ```bash
 cd backend
-# Run server with hot reload
+.venv\Scripts\activate
+fastapi dev src\backend\app\main.py
+# Server: http://localhost:8000  |  Swagger UI: http://localhost:8000/docs
+
+# Alternative (explicit uvicorn):
 .venv\Scripts\uvicorn.exe src.backend.app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
@@ -64,19 +78,35 @@ npm run lint     # ESLint checks
 ---
 
 ## Backend API Specification
-- `GET /api/health` - Server health check
-- `GET /api/config` - Full configuration
-- `POST /api/search` - Search YouTube and queue jobs (`source="search"`, `trend_score=NULL`)
-- `POST /api/jobs` / `POST /api/jobs/url` - Ingest direct YouTube URL (`source="direct_url"`)
-- `GET /api/jobs` - List all queued/processing jobs
-- `GET /api/jobs/{video_id}` - Get individual job metadata
-- `WS /ws/jobs` - WebSocket live streaming job queue updates
-- `GET /api/trend/uncalculated` - Get count and list of unranked videos
-- `POST /api/trend/calculate` - Compute trend scores from `metadata.json` and sync with `job.db`
+
+### Health
+- `GET /api/health` — Server liveness check
+
+### Configuration (`/api/config`)
+- `GET /api/config` — Full `config.json`
+- `GET /api/config/llm/providers` — Check Ollama & Gemini availability; updates `config.json` *(call before `/llm/models`)*
+- `GET /api/config/llm/models` — Fetch available models for all active providers
+- `PUT /api/config/llm/configure` — Set active provider and model `{ provider, model }`
+- `GET /api/config/search/params/options` — Valid values/ranges for all search parameters
+- `PUT /api/config/search/params` — Persist new search param values to `config.json`
+
+### Ingestion
+- `POST /api/search` — Keyword search → queue jobs (`source="search"`, `trend_score=NULL`). Body: `{ q, overrideParams? }`
+- `POST /api/jobs` / `POST /api/jobs/url` — Direct URL ingestion (`source="direct_url"`). Body: `{ url }`
+- `GET /api/jobs` — List all jobs (ordered `created_at DESC`)
+- `GET /api/jobs/{video_id}` — Get single job by video ID
+- `WS /ws/jobs` — WebSocket: sends snapshot of all jobs on each client message (pull-based)
+
+### Trend
+- `GET /api/trend` / `GET /api/trend/uncalculated` — List videos with `trend_score IS NULL`. Query: `?source=search`
+- `POST /api/trend` / `POST /api/trend/calculate` — Calculate & persist trend scores. Body: `{ source?, video_ids? }`
+
+> **Workflow reminder:** `POST /api/search` queues jobs with `trend_score = NULL`. You must call `POST /api/trend/calculate` separately to score them.
 
 ---
 
 ## Coding Conventions
-1. **Python**: Strict type hints, modular pipeline functions, preserve all comments, use `get_db()` context manager / connection helpers.
-2. **TypeScript / React**: Modern functional components, Tailwind v4 styling with utility classes, typed API contracts.
-3. **Database**: SQLite `jobs` table is the single source of truth for job progression.
+1. **Python**: Strict type hints, modular pipeline functions, preserve all comments, use `get_db()` context manager / connection helpers. Always guard divisions with `max(x, 1)` in `trendCalculator.py`.
+2. **TypeScript / React**: Modern functional components, Tailwind v4 styling with CSS variables, typed API contracts via `services/api.ts`.
+3. **Database**: SQLite `jobs` table is the single source of truth for job progression. Preserve schema compatibility in `init_db.py` when adding columns.
+4. **Config API routes**: Search param endpoints live under `/api/config/search/params` (not `/llm/params`). LLM endpoints live under `/api/config/llm/*`.

@@ -192,7 +192,7 @@ export const checkModels = async (): Promise<ModelsResponse> => {
 };
 
 export const getParamOptions = async (): Promise<ParamOptions> => {
-  const response = await client.get('/api/config/llm/params/options');
+  const response = await client.get('/api/config/search/params/options');
   return response.data;
 };
 
@@ -202,7 +202,7 @@ export const updateLLMConfig = async (config: LLMConfig): Promise<LLMConfig> => 
 };
 
 export const updateSearchParams = async (params: SearchParams): Promise<SearchParams> => {
-  const response = await client.put('/api/config/llm/params', params);
+  const response = await client.put('/api/config/search/params', params);
   return response.data;
 };
 
