@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from typing import Optional, List
 
 from app.database import get_db
-from app.init_db import insert_job, get_job, get_all_jobs, archive_jobs, delete_jobs
+from app.init_db import insert_job, get_job, get_all_jobs, archive_jobs, unarchive_jobs, delete_jobs
 from app.utils.storage import youtube_video_dir, STORAGE
 from app.core.config import YOUTUBE_API_KEY
 from app.pipeline.youtube.trendCalculator import calculate_trend_for_video
@@ -123,7 +123,16 @@ async def get_job_by_id(video_id: str):
                 detail=f"Job with video_id {video_id} not found"
             )
 
-        return job
+        metadata = {}
+        metadata_file = youtube_video_dir(video_id) / "metadata.json"
+        if metadata_file.exists():
+            try:
+                with open(metadata_file, "r", encoding="utf-8") as f:
+                    metadata = json.load(f)
+            except (OSError, json.JSONDecodeError):
+                metadata = {}
+
+        return {**job, "metadata": metadata}
     except HTTPException:
         raise
     except Exception as e:
@@ -293,6 +302,38 @@ async def archive_videos(request: ArchiveRequest):
         raise HTTPException(
             status_code=500,
             detail=f"Failed to archive videos: {str(e)}"
+        )
+
+
+@router.post("/unarchive")
+@router.put("/unarchive")
+async def unarchive_videos(request: ArchiveRequest):
+    """
+    Restore archived videos to the job queue, preserving their processing state.
+    """
+    try:
+        video_ids = request.video_ids or ([] if not request.video_id else [request.video_id])
+
+        if not video_ids:
+            raise HTTPException(
+                status_code=400,
+                detail="No video_ids provided in request body."
+            )
+
+        unarchived_count = unarchive_jobs(video_ids)
+
+        return {
+            "status": "success",
+            "unarchived_count": unarchived_count,
+            "video_ids": video_ids,
+            "message": f"Successfully restored {unarchived_count} video(s)."
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to unarchive videos: {str(e)}"
         )
 
 

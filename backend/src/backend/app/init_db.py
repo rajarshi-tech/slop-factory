@@ -233,6 +233,38 @@ def archive_jobs(video_ids: List[str]) -> int:
         db.close()
 
 
+def unarchive_jobs(video_ids: List[str]) -> int:
+    """
+    Restore archived jobs to the queue while preserving their processing state.
+
+    Args:
+        video_ids: List of YouTube video IDs
+
+    Returns:
+        int: Number of updated rows
+    """
+    if not video_ids:
+        return 0
+
+    db = get_db()
+    try:
+        now = datetime.now().isoformat()
+        placeholders = ",".join(["?"] * len(video_ids))
+        query = f"""
+            UPDATE jobs
+            SET video_state = 'in_queue', updated_at = ?
+            WHERE video_state = 'archived' AND video_id IN ({placeholders})
+        """
+        cursor = db.execute(query, [now] + list(video_ids))
+        db.commit()
+        return cursor.rowcount
+    except Exception as e:
+        db.rollback()
+        raise e
+    finally:
+        db.close()
+
+
 def delete_jobs(video_ids: List[str]) -> int:
     """
     Delete jobs from the database for a list of video_ids.

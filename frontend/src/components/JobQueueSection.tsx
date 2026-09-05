@@ -125,6 +125,17 @@ export const JobQueueSection: React.FC<JobQueueSectionProps> = ({
     }
   };
 
+  const formatDuration = (seconds?: number) => {
+    if (seconds === undefined || seconds === null) return 'Unknown';
+    const totalSeconds = Math.round(seconds);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const remainingSeconds = totalSeconds % 60;
+    return `${hours > 0 ? `${hours}:` : ''}${hours > 0 && minutes < 10 ? '0' : ''}${minutes}:${remainingSeconds
+      .toString()
+      .padStart(2, '0')}`;
+  };
+
   const handleOpenDetails = async (job: Job) => {
     setSelectedJob(job);
     setIsViewingDetails(true);
@@ -423,8 +434,8 @@ export const JobQueueSection: React.FC<JobQueueSectionProps> = ({
 
       {/* Details Drawer / Modal */}
       {isViewingDetails && selectedJob && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-2xl w-full p-6 sm:p-8 shadow-2xl space-y-6 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 min-h-full overflow-y-auto bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="my-8 bg-slate-900 border border-slate-800 rounded-3xl max-w-3xl w-full p-6 sm:p-8 shadow-2xl space-y-6 max-h-[calc(100vh-2rem)] overflow-y-auto">
             <div className="flex items-start justify-between">
               <div>
                 <span className={`px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider border ${getStatusBadge(selectedJob.job_status)}`}>
@@ -448,14 +459,47 @@ export const JobQueueSection: React.FC<JobQueueSectionProps> = ({
                 <p className="text-xs mt-2">Loading metadata...</p>
               </div>
             ) : (
-              <div className="grid grid-cols-2 gap-3 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                 <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
                   <span className="text-slate-500 block">Video ID</span>
-                  <span className="font-mono text-slate-200">{selectedJob.video_id}</span>
+                  <span className="font-mono text-slate-200 break-all">{selectedJob.metadata?.id || selectedJob.video_id}</span>
                 </div>
                 <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
-                  <span className="text-slate-500 block">Source</span>
-                  <span className="font-semibold text-slate-200 uppercase">{selectedJob.source}</span>
+                  <span className="text-slate-500 block">Title</span>
+                  <span className="font-semibold text-slate-200">{selectedJob.metadata?.title || selectedJob.title || 'Unknown'}</span>
+                </div>
+                <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
+                  <span className="text-slate-500 block">Channel</span>
+                  <span className="font-semibold text-slate-200">{selectedJob.metadata?.channel?.name || selectedJob.channel || 'Unknown'}</span>
+                  {selectedJob.metadata?.channel?.id && <span className="font-mono text-slate-500 block mt-1 break-all">{selectedJob.metadata.channel.id}</span>}
+                </div>
+                <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
+                  <span className="text-slate-500 block">Subscribers</span>
+                  <span className="font-semibold text-slate-200">{selectedJob.metadata?.channel?.subscriber_count?.toLocaleString() || 'Unknown'}</span>
+                </div>
+                <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
+                  <span className="text-slate-500 block">Video Length</span>
+                  <span className="font-semibold text-slate-200">{formatDuration(selectedJob.metadata?.details?.duration)}</span>
+                </div>
+                <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
+                  <span className="text-slate-500 block">Published</span>
+                  <span className="font-semibold text-slate-200">{selectedJob.metadata?.published_at ? new Date(selectedJob.metadata.published_at).toLocaleString() : 'Unknown'}</span>
+                </div>
+                <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 sm:col-span-2">
+                  <span className="text-slate-500 block">Video URL</span>
+                  {selectedJob.metadata?.url ? <a href={selectedJob.metadata.url} target="_blank" rel="noreferrer" className="text-indigo-300 hover:text-indigo-200 break-all">{selectedJob.metadata.url}</a> : <span className="text-slate-400">Unknown</span>}
+                </div>
+                <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
+                  <span className="text-slate-500 block">Views</span>
+                  <span className="font-semibold text-slate-200">{selectedJob.metadata?.statistics?.views?.toLocaleString() || 'Unknown'}</span>
+                </div>
+                <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
+                  <span className="text-slate-500 block">Likes</span>
+                  <span className="font-semibold text-slate-200">{selectedJob.metadata?.statistics?.likes?.toLocaleString() || 'Unknown'}</span>
+                </div>
+                <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
+                  <span className="text-slate-500 block">Comments</span>
+                  <span className="font-semibold text-slate-200">{selectedJob.metadata?.statistics?.comments?.toLocaleString() || 'Unknown'}</span>
                 </div>
                 <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
                   <span className="text-slate-500 block">Trend Score</span>
@@ -466,6 +510,19 @@ export const JobQueueSection: React.FC<JobQueueSectionProps> = ({
                 <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
                   <span className="text-slate-500 block">Processing State</span>
                   <span className="font-semibold text-slate-200">{selectedJob.processing_state}</span>
+                </div>
+                <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
+                  <span className="text-slate-500 block">Source</span>
+                  <span className="font-semibold text-slate-200 uppercase">{selectedJob.source}</span>
+                </div>
+                <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
+                  <span className="text-slate-500 block">Pipeline</span>
+                  <div className="mt-1 space-y-1 text-slate-300">
+                    {Object.entries(selectedJob.metadata?.pipeline || {}).map(([stage, complete]) => (
+                      <div key={stage} className="flex justify-between gap-3"><span>{stage}</span><span className={complete ? 'text-emerald-400' : 'text-slate-500'}>{complete ? 'Complete' : 'Pending'}</span></div>
+                    ))}
+                    {!selectedJob.metadata?.pipeline && <span className="text-slate-500">Unknown</span>}
+                  </div>
                 </div>
                 <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
                   <span className="text-slate-500 block">Created At</span>

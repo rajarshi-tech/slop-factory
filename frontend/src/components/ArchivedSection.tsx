@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { getJobById, deleteJobs } from '../services/api';
+import { getJobById, deleteJobs, unarchiveJobs } from '../services/api';
 import type { Job } from '../services/api';
 
 interface ArchivedSectionProps {
@@ -27,6 +27,7 @@ export const ArchivedSection: React.FC<ArchivedSectionProps> = ({
   const [isConfirmingDelete, setIsConfirmingDelete] = useState<boolean>(false);
   const [idsToDelete, setIdsToDelete] = useState<string[]>([]);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
+  const [unarchivingId, setUnarchivingId] = useState<string | null>(null);
 
   // Filter only archived jobs
   const archivedJobs = jobs.filter((job) => job.video_state === 'archived');
@@ -59,6 +60,17 @@ export const ArchivedSection: React.FC<ArchivedSectionProps> = ({
       default:
         return 'bg-slate-700/50 text-slate-300 border-slate-600/50';
     }
+  };
+
+  const formatDuration = (seconds?: number) => {
+    if (seconds === undefined || seconds === null) return 'Unknown';
+    const totalSeconds = Math.round(seconds);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const remainingSeconds = totalSeconds % 60;
+    return `${hours > 0 ? `${hours}:` : ''}${hours > 0 && minutes < 10 ? '0' : ''}${minutes}:${remainingSeconds
+      .toString()
+      .padStart(2, '0')}`;
   };
 
   const handleOpenDetails = async (job: Job) => {
@@ -149,6 +161,28 @@ export const ArchivedSection: React.FC<ArchivedSectionProps> = ({
     }
   };
 
+  const handleUnarchive = async (videoIds: string[]) => {
+    if (videoIds.length === 0) return;
+
+    try {
+      setUnarchivingId(videoIds.length === 1 ? videoIds[0] : 'batch');
+      await unarchiveJobs(videoIds);
+      setSelectedVideoIds((prev) => {
+        const next = new Set(prev);
+        videoIds.forEach((id) => next.delete(id));
+        return next;
+      });
+      if (selectedJob && videoIds.includes(selectedJob.video_id)) {
+        setIsViewingDetails(false);
+      }
+      onRefresh();
+    } catch (err) {
+      console.error('Failed to unarchive videos:', err);
+    } finally {
+      setUnarchivingId(null);
+    }
+  };
+
   const isAllFilteredSelected =
     filteredJobs.length > 0 && filteredJobs.every((j) => selectedVideoIds.has(j.video_id));
 
@@ -201,6 +235,16 @@ export const ArchivedSection: React.FC<ArchivedSectionProps> = ({
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
               </svg>
               Delete Selected ({selectedVideoIds.size})
+            </button>
+            <button
+              onClick={() => handleUnarchive(Array.from(selectedVideoIds))}
+              disabled={unarchivingId === 'batch'}
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-emerald-600/30 transition-all flex items-center gap-2 disabled:opacity-50"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12a9 9 0 109-9 9.75 9.75 0 00-6.74 2.74L3 8m0 0V3m0 5h5" />
+              </svg>
+              {unarchivingId === 'batch' ? 'Restoring...' : 'Restore Selected'}
             </button>
           </div>
         </div>
@@ -396,6 +440,16 @@ export const ArchivedSection: React.FC<ArchivedSectionProps> = ({
                       <td className="py-4 px-4 text-right">
                         <div className="flex items-center justify-end gap-2">
                           <button
+                            onClick={() => handleUnarchive([job.video_id])}
+                            disabled={unarchivingId === job.video_id}
+                            className="p-1.5 text-emerald-400 hover:text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 rounded-lg border border-emerald-500/30 transition-colors disabled:opacity-50"
+                            title="Restore video to its designated area"
+                          >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12a9 9 0 109-9 9.75 9.75 0 00-6.74 2.74L3 8m0 0V3m0 5h5" />
+                            </svg>
+                          </button>
+                          <button
                             onClick={() => promptDeleteSingle(job.video_id)}
                             className="p-1.5 text-rose-400 hover:text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 rounded-lg border border-rose-500/30 transition-colors"
                             title="Delete video and files"
@@ -496,8 +550,8 @@ export const ArchivedSection: React.FC<ArchivedSectionProps> = ({
 
       {/* Details Drawer / Modal */}
       {isViewingDetails && selectedJob && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-2xl w-full p-6 sm:p-8 shadow-2xl space-y-6 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 min-h-full overflow-y-auto bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="my-8 bg-slate-900 border border-slate-800 rounded-3xl max-w-3xl w-full p-6 sm:p-8 shadow-2xl space-y-6 max-h-[calc(100vh-2rem)] overflow-y-auto">
             <div className="flex items-start justify-between">
               <div>
                 <div className="flex items-center gap-2">
@@ -526,14 +580,47 @@ export const ArchivedSection: React.FC<ArchivedSectionProps> = ({
                 <p className="text-xs mt-2">Loading metadata...</p>
               </div>
             ) : (
-              <div className="grid grid-cols-2 gap-3 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                 <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
                   <span className="text-slate-500 block">Video ID</span>
-                  <span className="font-mono text-slate-200">{selectedJob.video_id}</span>
+                  <span className="font-mono text-slate-200 break-all">{selectedJob.metadata?.id || selectedJob.video_id}</span>
                 </div>
                 <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
-                  <span className="text-slate-500 block">Source</span>
-                  <span className="font-semibold text-slate-200 uppercase">{selectedJob.source}</span>
+                  <span className="text-slate-500 block">Title</span>
+                  <span className="font-semibold text-slate-200">{selectedJob.metadata?.title || selectedJob.title || 'Unknown'}</span>
+                </div>
+                <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
+                  <span className="text-slate-500 block">Channel</span>
+                  <span className="font-semibold text-slate-200">{selectedJob.metadata?.channel?.name || selectedJob.channel || 'Unknown'}</span>
+                  {selectedJob.metadata?.channel?.id && <span className="font-mono text-slate-500 block mt-1 break-all">{selectedJob.metadata.channel.id}</span>}
+                </div>
+                <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
+                  <span className="text-slate-500 block">Subscribers</span>
+                  <span className="font-semibold text-slate-200">{selectedJob.metadata?.channel?.subscriber_count?.toLocaleString() || 'Unknown'}</span>
+                </div>
+                <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
+                  <span className="text-slate-500 block">Video Length</span>
+                  <span className="font-semibold text-slate-200">{formatDuration(selectedJob.metadata?.details?.duration)}</span>
+                </div>
+                <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
+                  <span className="text-slate-500 block">Published</span>
+                  <span className="font-semibold text-slate-200">{selectedJob.metadata?.published_at ? new Date(selectedJob.metadata.published_at).toLocaleString() : 'Unknown'}</span>
+                </div>
+                <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 sm:col-span-2">
+                  <span className="text-slate-500 block">Video URL</span>
+                  {selectedJob.metadata?.url ? <a href={selectedJob.metadata.url} target="_blank" rel="noreferrer" className="text-indigo-300 hover:text-indigo-200 break-all">{selectedJob.metadata.url}</a> : <span className="text-slate-400">Unknown</span>}
+                </div>
+                <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
+                  <span className="text-slate-500 block">Views</span>
+                  <span className="font-semibold text-slate-200">{selectedJob.metadata?.statistics?.views?.toLocaleString() || 'Unknown'}</span>
+                </div>
+                <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
+                  <span className="text-slate-500 block">Likes</span>
+                  <span className="font-semibold text-slate-200">{selectedJob.metadata?.statistics?.likes?.toLocaleString() || 'Unknown'}</span>
+                </div>
+                <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
+                  <span className="text-slate-500 block">Comments</span>
+                  <span className="font-semibold text-slate-200">{selectedJob.metadata?.statistics?.comments?.toLocaleString() || 'Unknown'}</span>
                 </div>
                 <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
                   <span className="text-slate-500 block">Trend Score</span>
@@ -544,6 +631,19 @@ export const ArchivedSection: React.FC<ArchivedSectionProps> = ({
                 <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
                   <span className="text-slate-500 block">Processing State</span>
                   <span className="font-semibold text-slate-200">{selectedJob.processing_state}</span>
+                </div>
+                <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
+                  <span className="text-slate-500 block">Source</span>
+                  <span className="font-semibold text-slate-200 uppercase">{selectedJob.source}</span>
+                </div>
+                <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
+                  <span className="text-slate-500 block">Pipeline</span>
+                  <div className="mt-1 space-y-1 text-slate-300">
+                    {Object.entries(selectedJob.metadata?.pipeline || {}).map(([stage, complete]) => (
+                      <div key={stage} className="flex justify-between gap-3"><span>{stage}</span><span className={complete ? 'text-emerald-400' : 'text-slate-500'}>{complete ? 'Complete' : 'Pending'}</span></div>
+                    ))}
+                    {!selectedJob.metadata?.pipeline && <span className="text-slate-500">Unknown</span>}
+                  </div>
                 </div>
                 <div className="bg-slate-950 p-3 rounded-xl border border-slate-800">
                   <span className="text-slate-500 block">Created At</span>
@@ -564,6 +664,16 @@ export const ArchivedSection: React.FC<ArchivedSectionProps> = ({
             )}
 
             <div className="flex justify-end gap-3 pt-2">
+              <button
+                onClick={() => handleUnarchive([selectedJob.video_id])}
+                disabled={unarchivingId === selectedJob.video_id}
+                className="px-4 py-2 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 text-xs font-semibold rounded-xl transition-colors flex items-center gap-1.5 disabled:opacity-50"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12a9 9 0 109-9 9.75 9.75 0 00-6.74 2.74L3 8m0 0V3m0 5h5" />
+                </svg>
+                {unarchivingId === selectedJob.video_id ? 'Restoring...' : 'Restore Video'}
+              </button>
               <button
                 onClick={() => promptDeleteSingle(selectedJob.video_id)}
                 className="px-4 py-2 bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/40 text-xs font-semibold rounded-xl transition-colors flex items-center gap-1.5"

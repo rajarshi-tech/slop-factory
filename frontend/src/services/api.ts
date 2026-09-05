@@ -109,6 +109,28 @@ export interface ApiKeyStatus {
   gemini_key_set: boolean;
 }
 
+export interface VideoMetadata {
+  id?: string;
+  title?: string;
+  channel?: {
+    name?: string;
+    id?: string;
+    subscriber_count?: number;
+  };
+  url?: string;
+  published_at?: string;
+  statistics?: {
+    views?: number;
+    likes?: number;
+    comments?: number;
+  };
+  details?: {
+    duration?: number;
+  };
+  pipeline?: Record<string, boolean>;
+  trend_score?: number;
+}
+
 export interface Job {
   id: number;
   video_id: string;
@@ -121,6 +143,7 @@ export interface Job {
   video_state: 'in_queue' | 'active' | 'archived' | string;
   progress: number;
   error_message: string | null;
+  metadata?: VideoMetadata;
   created_at: string;
   updated_at: string;
 }
@@ -169,6 +192,13 @@ export interface UncalculatedTrendsResponse {
 export interface ArchiveResponse {
   status: string;
   archived_count: number;
+  video_ids: string[];
+  message: string;
+}
+
+export interface UnarchiveResponse {
+  status: string;
+  unarchived_count: number;
   video_ids: string[];
   message: string;
 }
@@ -288,6 +318,11 @@ export const getJobById = async (videoId: string): Promise<Job> => {
 
 export const archiveJobs = async (videoIds: string[]): Promise<ArchiveResponse> => {
   const response = await client.post('/api/jobs/archive', { video_ids: videoIds });
+  return response.data;
+};
+
+export const unarchiveJobs = async (videoIds: string[]): Promise<UnarchiveResponse> => {
+  const response = await client.post('/api/jobs/unarchive', { video_ids: videoIds });
   return response.data;
 };
 
