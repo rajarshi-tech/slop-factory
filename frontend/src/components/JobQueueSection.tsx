@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { getJobById, archiveJobs } from '../services/api';
+import { getJobById, archiveJobs, processVideos } from '../services/api';
 import type { Job } from '../services/api';
 
 interface JobQueueSectionProps {
@@ -23,11 +23,18 @@ export const JobQueueSection: React.FC<JobQueueSectionProps> = ({
   const [detailsLoading, setDetailsLoading] = useState<boolean>(false);
   const [archivingId, setArchivingId] = useState<string | null>(null);
 
-  // Exclude archived videos from job queue
-  const unarchivedJobs = jobs.filter((job) => job.video_state !== 'archived');
+  // Multi-selection state
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const [processMessage, setProcessMessage] = useState<string | null>(null);
 
-  // Filter unarchived jobs
-  const filteredJobs = unarchivedJobs.filter((job) => {
+  // Exclude archived and processed videos from job queue (processed videos move to Processed section)
+  const queueJobs = jobs.filter(
+    (job) => job.video_state !== 'archived' && job.processing_state !== 'processed'
+  );
+
+  // Filter queue jobs
+  const filteredJobs = queueJobs.filter((job) => {
     if (filterStatus !== 'all' && job.job_status !== filterStatus) return false;
     if (filterSource !== 'all' && job.source !== filterSource) return false;
     if (searchQuery.trim()) {
@@ -40,6 +47,51 @@ export const JobQueueSection: React.FC<JobQueueSectionProps> = ({
     return true;
   });
 
+  const toggleSelectAll = () => {
+    const visibleIds = filteredJobs.map((j) => j.video_id);
+    const allSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.includes(id));
+    if (allSelected) {
+      setSelectedIds((prev) => prev.filter((id) => !visibleIds.includes(id)));
+    } else {
+      setSelectedIds((prev) => Array.from(new Set([...prev, ...visibleIds])));
+    }
+  };
+
+  const toggleSelectJob = (videoId: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(videoId) ? prev.filter((id) => id !== videoId) : [...prev, videoId]
+    );
+  };
+
+  const handleProcessSelected = async () => {
+    if (selectedIds.length === 0) return;
+    try {
+      setIsProcessing(true);
+      setProcessMessage(`Processing ${selectedIds.length} video(s)...`);
+      await processVideos(selectedIds);
+      setProcessMessage(`Processing completed! Videos moved to Processed section.`);
+      setSelectedIds([]);
+      onRefresh();
+    } catch (err) {
+      console.error('Failed to process videos:', err);
+      setProcessMessage('Failed to process selected videos.');
+    } finally {
+      setIsProcessing(false);
+      setTimeout(() => setProcessMessage(null), 5000);
+    }
+  };
+
+  const handleArchiveSelected = async () => {
+    if (selectedIds.length === 0) return;
+    try {
+      await archiveJobs(selectedIds);
+      setSelectedIds([]);
+      onRefresh();
+    } catch (err) {
+      console.error('Failed to archive selected videos:', err);
+    }
+  };
+
   const handleArchiveJob = async (videoId: string) => {
     try {
       setArchivingId(videoId);
@@ -47,6 +99,7 @@ export const JobQueueSection: React.FC<JobQueueSectionProps> = ({
       if (selectedJob?.video_id === videoId) {
         setIsViewingDetails(false);
       }
+      setSelectedIds((prev) => prev.filter((id) => id !== videoId));
       onRefresh();
     } catch (err) {
       console.error('Failed to archive job:', err);
@@ -116,7 +169,7 @@ export const JobQueueSection: React.FC<JobQueueSectionProps> = ({
             onChange={(e) => setFilterStatus(e.target.value)}
             className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           >
-            <option value="all">All Statuses ({unarchivedJobs.length})</option>
+            <option value="all">All Statuses ({queueJobs.length})</option>
             <option value="queued">Queued</option>
             <option value="downloading">Downloading</option>
             <option value="downloaded">Downloaded</option>
@@ -158,6 +211,64 @@ export const JobQueueSection: React.FC<JobQueueSectionProps> = ({
         </div>
       </div>
 
+      {/* Process Notification / Status Message */}
+      {processMessage && (
+        <div className="p-4 rounded-2xl bg-indigo-950/60 border border-indigo-500/40 text-indigo-200 text-xs flex items-center justify-between animate-fadeIn">
+          <div className="flex items-center gap-2">
+            {isProcessing && <div className="w-3.5 h-3.5 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" />}
+            <span>{processMessage}</span>
+          </div>
+          <button onClick={() => setProcessMessage(null)} className="text-indigo-400 hover:text-white">✕</button>
+        </div>
+      )}
+
+      {/* Batch Selection Action Bar */}
+      {selectedIds.length > 0 && (
+        <div className="bg-indigo-950/80 border border-indigo-800/80 rounded-2xl p-4 backdrop-blur-xl shadow-xl flex flex-wrap items-center justify-between gap-4 animate-fadeIn">
+          <div className="flex items-center gap-3">
+            <span className="px-3 py-1 rounded-full bg-indigo-500/20 text-indigo-300 text-xs font-bold border border-indigo-500/30">
+              {selectedIds.length} selected
+            </span>
+            <button
+              onClick={() => setSelectedIds([])}
+              className="text-xs text-slate-400 hover:text-white transition-colors"
+            >
+              Deselect all
+            </button>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleArchiveSelected}
+              className="px-3 py-2 text-xs font-medium text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 rounded-xl border border-amber-500/30 transition-colors"
+            >
+              Archive Selected ({selectedIds.length})
+            </button>
+
+            <button
+              onClick={handleProcessSelected}
+              disabled={isProcessing}
+              className="px-4 py-2 text-xs font-bold text-white bg-linear-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 rounded-xl shadow-lg shadow-indigo-600/30 transition-all flex items-center gap-2 disabled:opacity-50"
+            >
+              {isProcessing ? (
+                <>
+                  <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  <span>Processing...</span>
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span>Process Selected Videos ({selectedIds.length})</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Jobs Grid / Table */}
       <div className="bg-slate-900/70 border border-slate-800/80 rounded-3xl overflow-hidden backdrop-blur-xl shadow-2xl">
         {filteredJobs.length === 0 ? (
@@ -173,6 +284,15 @@ export const JobQueueSection: React.FC<JobQueueSectionProps> = ({
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="border-b border-slate-800 bg-slate-950/60 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                  <th className="py-3.5 px-4 w-10">
+                    <input
+                      type="checkbox"
+                      checked={filteredJobs.length > 0 && filteredJobs.every((j) => selectedIds.includes(j.video_id))}
+                      onChange={toggleSelectAll}
+                      className="rounded border-slate-700 bg-slate-900 text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
+                      title="Select all"
+                    />
+                  </th>
                   <th className="py-3.5 px-4 sm:px-6">Video / Title</th>
                   <th className="py-3.5 px-4">Source</th>
                   <th className="py-3.5 px-4">Trend Score</th>
@@ -183,19 +303,34 @@ export const JobQueueSection: React.FC<JobQueueSectionProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60 text-sm">
-                {filteredJobs.map((job) => (
-                  <tr key={job.video_id} className="hover:bg-slate-800/40 transition-colors group">
-                    {/* Title & Channel */}
-                    <td className="py-4 px-4 sm:px-6 max-w-xs sm:max-w-md">
-                      <div className="font-semibold text-slate-200 truncate group-hover:text-indigo-400 transition-colors">
-                        {job.title || job.video_id}
-                      </div>
-                      <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
-                        <span>{job.channel || 'Unknown Channel'}</span>
-                        <span>•</span>
-                        <span className="font-mono text-[11px]">{job.video_id}</span>
-                      </div>
-                    </td>
+                {filteredJobs.map((job) => {
+                  const isSelected = selectedIds.includes(job.video_id);
+                  return (
+                    <tr
+                      key={job.video_id}
+                      className={`hover:bg-slate-800/40 transition-colors group ${isSelected ? 'bg-indigo-950/30' : ''}`}
+                    >
+                      {/* Checkbox */}
+                      <td className="py-4 px-4">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleSelectJob(job.video_id)}
+                          className="rounded border-slate-700 bg-slate-900 text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
+                        />
+                      </td>
+
+                      {/* Title & Channel */}
+                      <td className="py-4 px-4 sm:px-6 max-w-xs sm:max-w-md">
+                        <div className="font-semibold text-slate-200 truncate group-hover:text-indigo-400 transition-colors">
+                          {job.title || job.video_id}
+                        </div>
+                        <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
+                          <span>{job.channel || 'Unknown Channel'}</span>
+                          <span>•</span>
+                          <span className="font-mono text-[11px]">{job.video_id}</span>
+                        </div>
+                      </td>
 
                     {/* Source */}
                     <td className="py-4 px-4">
@@ -278,7 +413,8 @@ export const JobQueueSection: React.FC<JobQueueSectionProps> = ({
                       </div>
                     </td>
                   </tr>
-                ))}
+                );
+              })}
               </tbody>
             </table>
           </div>

@@ -1,6 +1,6 @@
 import React from 'react';
 
-export type TabType = 'ingestion' | 'trend' | 'jobs' | 'archived' | 'settings';
+export type TabType = 'ingestion' | 'trend' | 'jobs' | 'processed' | 'archived' | 'settings';
 
 interface NavbarProps {
   activeTab: TabType;
@@ -8,6 +8,7 @@ interface NavbarProps {
   isBackendHealthy: boolean;
   isWsConnected: boolean;
   activeJobCount: number;
+  processedJobCount?: number;
   archivedJobCount?: number;
 }
 
@@ -17,6 +18,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   isBackendHealthy,
   isWsConnected,
   activeJobCount,
+  processedJobCount = 0,
   archivedJobCount = 0,
 }) => {
   return (
@@ -86,6 +88,25 @@ export const Navbar: React.FC<NavbarProps> = ({
               {activeJobCount > 0 && (
                 <span className="px-1.5 py-0.2 text-[11px] font-semibold rounded-full bg-emerald-500 text-white">
                   {activeJobCount}
+                </span>
+              )}
+            </button>
+
+            <button
+              onClick={() => onSelectTab('processed')}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-medium transition-all relative ${
+                activeTab === 'processed'
+                  ? 'bg-purple-600 text-white shadow-md shadow-purple-600/30'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+              }`}
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+              <span>Processed</span>
+              {processedJobCount > 0 && (
+                <span className="px-1.5 py-0.2 text-[11px] font-semibold rounded-full bg-purple-500 text-white">
+                  {processedJobCount}
                 </span>
               )}
             </button>

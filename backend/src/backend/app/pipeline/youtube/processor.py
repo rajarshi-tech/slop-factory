@@ -334,7 +334,11 @@ def generateClips(
     ) as f:
         metadata = json.load(f)
 
-    if metadata["pipeline"]["clips-processed"] is True:
+    if (
+        metadata["pipeline"]["clips-processed"] is True
+        and (video_dir / "clips").is_dir()
+        and any((video_dir / "clips").glob("*.mp4"))
+    ):
         print("clips already made")
         return
 

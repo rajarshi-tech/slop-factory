@@ -63,6 +63,54 @@ async def list_jobs():
         )
 
 
+@router.get("/{video_id}/clips")
+async def get_job_clips(video_id: str):
+    """Get all generated clips for a video_id"""
+    try:
+        video_dir = youtube_video_dir(video_id)
+        clips_dir = video_dir / "clips"
+
+        timestamps_file = video_dir / "clipTimestamps.json"
+        timestamps_data = []
+        if timestamps_file.exists():
+            try:
+                with open(timestamps_file, "r", encoding="utf-8") as f:
+                    timestamps_data = json.load(f)
+            except Exception:
+                pass
+
+        clips = []
+        if clips_dir.exists():
+            clip_files = sorted(list(clips_dir.glob("*.mp4")))
+            for idx, file_path in enumerate(clip_files):
+                filename = file_path.name
+                relative_url = f"/storage/youtube/content/{video_id}/clips/{filename}"
+
+                matching_ts = timestamps_data[idx] if idx < len(timestamps_data) else {}
+
+                clips.append({
+                    "id": f"{video_id}_{idx+1}",
+                    "filename": filename,
+                    "url": relative_url,
+                    "title": matching_ts.get("title", filename.replace(".mp4", "")),
+                    "start": matching_ts.get("start"),
+                    "end": matching_ts.get("end"),
+                    "score": matching_ts.get("score"),
+                    "summary": matching_ts.get("summary")
+                })
+
+        return {
+            "video_id": video_id,
+            "clips": clips,
+            "count": len(clips)
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch clips for video {video_id}: {str(e)}"
+        )
+
+
 @router.get("/{video_id}")
 async def get_job_by_id(video_id: str):
     """Get a specific job by video_id"""

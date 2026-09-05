@@ -6,7 +6,7 @@ from typing import Optional
 from app.pipeline.youtube.scraper import scrape
 from app.pipeline.youtube.trendCalculator import calculate_uncalculated_trends
 from app.init_db import insert_job
-from app.utils.storage import youtube_config_dir
+from app.utils.storage import load_config, save_config
 
 
 router = APIRouter()
@@ -30,11 +30,7 @@ async def search_videos(request: SearchRequest):
     """
     try:
         # Load current config
-        config_dir = youtube_config_dir()
-        config_path = config_dir / "config.json"
-
-        with open(str(config_path), "r", encoding="utf-8") as f:
-            config = json.load(f)
+        config = load_config()
 
         # Update query in config
         config["params"]["q"] = request.q
@@ -44,8 +40,7 @@ async def search_videos(request: SearchRequest):
             config["params"].update(request.overrideParams)
 
         # Save updated config
-        with open(str(config_path), "w", encoding="utf-8") as f:
-            json.dump(config, f, indent=2)
+        save_config(config)
 
         # Run scraper with updated params
         search_results = scrape(config["params"])

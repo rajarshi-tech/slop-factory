@@ -175,6 +175,27 @@ export interface DeleteJobsResponse {
   message: string;
 }
 
+export interface Clip {
+  id: string;
+  filename: string;
+  url: string;
+  title: string;
+  start?: number;
+  end?: number;
+  score?: number;
+  summary?: string;
+}
+
+export interface JobClipsResponse {
+  video_id: string;
+  clips: Clip[];
+  count: number;
+}
+
+export interface ProcessResponse {
+  [videoId: string]: string;
+}
+
 export interface HealthResponse {
   status: string;
 }
@@ -277,6 +298,17 @@ export const calculateTrends = async (
     source,
     video_ids,
   });
+  return response.data;
+};
+
+// Processing & Clips
+export const processVideos = async (videoIds: string[]): Promise<ProcessResponse> => {
+  const response = await client.post('/api/process', { video_ids: videoIds });
+  return response.data;
+};
+
+export const getJobClips = async (videoId: string): Promise<JobClipsResponse> => {
+  const response = await client.get(`/api/jobs/${videoId}/clips`);
   return response.data;
 };
 

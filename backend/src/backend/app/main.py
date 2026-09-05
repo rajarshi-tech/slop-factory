@@ -1,7 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
-from app.api import config, jobs, search, trend
+from app.api import config, jobs, process, search, trend
+from app.utils.storage import STORAGE
 
 
 app = FastAPI(
@@ -24,6 +26,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ---------------------------------------------------------
+# Static File Mount for Storage (Videos, Clips, Artifacts)
+# ---------------------------------------------------------
+
+app.mount("/storage", StaticFiles(directory=str(STORAGE)), name="storage")
 
 
 # ---------------------------------------------------------
@@ -58,6 +67,12 @@ app.include_router(
     jobs.router,
     prefix="/api/jobs",
     tags=["Jobs"],
+)
+
+app.include_router(
+    process.router,
+    prefix="/api/process",
+    tags=["Process"],
 )
 
 app.include_router(

@@ -4,6 +4,7 @@ import type { TabType } from './components/Navbar';
 import { IngestionSection } from './components/IngestionSection';
 import { TrendCalculatorSection } from './components/TrendCalculatorSection';
 import { JobQueueSection } from './components/JobQueueSection';
+import { ProcessedSection } from './components/ProcessedSection';
 import { ArchivedSection } from './components/ArchivedSection';
 import ConfigSection from './components/ConfigSection';
 import ParamControls from './components/ParamControls';
@@ -170,7 +171,8 @@ function App() {
         onSelectTab={setActiveTab}
         isBackendHealthy={isBackendHealthy}
         isWsConnected={isWsConnected}
-        activeJobCount={jobs.filter((j) => j.video_state !== 'archived' && ['queued', 'downloading', 'transcribing'].includes(j.job_status)).length}
+        activeJobCount={jobs.filter((j) => j.video_state !== 'archived' && j.processing_state !== 'processed' && ['queued', 'downloading', 'transcribing'].includes(j.job_status)).length}
+        processedJobCount={jobs.filter((j) => j.video_state !== 'archived' && j.processing_state === 'processed').length}
         archivedJobCount={jobs.filter((j) => j.video_state === 'archived').length}
       />
 
@@ -218,7 +220,7 @@ function App() {
           </div>
         )}
 
-        {/* TAB 2: JOB QUEUE */}
+        {/* TAB 3: JOB QUEUE */}
         {activeTab === 'jobs' && (
           <div className="space-y-8 animate-fadeIn">
             <JobQueueSection
@@ -230,7 +232,18 @@ function App() {
           </div>
         )}
 
-        {/* TAB 3: ARCHIVED */}
+        {/* TAB 4: PROCESSED */}
+        {activeTab === 'processed' && (
+          <div className="space-y-8 animate-fadeIn">
+            <ProcessedSection
+              jobs={jobs}
+              isLoading={isLoadingJobs}
+              onRefresh={loadData}
+            />
+          </div>
+        )}
+
+        {/* TAB 5: ARCHIVED */}
         {activeTab === 'archived' && (
           <div className="space-y-8 animate-fadeIn">
             <ArchivedSection
