@@ -8,6 +8,7 @@ import { ProcessedSection } from './components/ProcessedSection';
 import { ArchivedSection } from './components/ArchivedSection';
 import ConfigSection from './components/ConfigSection';
 import ParamControls from './components/ParamControls';
+import { YoutubeChannelsSection } from './components/YoutubeChannelsSection';
 import {
   getConfig,
   updateSearchParams,
@@ -18,7 +19,9 @@ import {
 import type { Job, LLMConfig, SearchParams } from './services/api';
 
 function App() {
-  const [activeTab, setActiveTab] = useState<TabType>('ingestion');
+  const [activeTab, setActiveTab] = useState<TabType>(() => (
+    new URLSearchParams(window.location.search).has('youtube') ? 'settings' : 'ingestion'
+  ));
 
   // Configuration state
   const [llmConfig, setLlmConfig] = useState<LLMConfig>({ provider: null, model: null });
@@ -268,6 +271,7 @@ function App() {
                 onParamsSave={handleParamsSave}
                 defaultParams={searchParams}
               />
+              <YoutubeChannelsSection />
             </div>
           </div>
         )}

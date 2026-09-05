@@ -231,6 +231,38 @@ export interface ProcessResponse {
   [videoId: string]: string;
 }
 
+export interface UploadChannel {
+  id: string;
+  name: string;
+}
+
+export interface UploadScheduleRequest {
+  video_ids: string[];
+  channel_id: string;
+  videos_per_day: number;
+  start_date: string;
+  start_time: string;
+  timezone: string;
+}
+
+export interface UploadScheduleItem {
+  source_video_id: string;
+  clip_id: string;
+  clip_filename: string;
+  title: string;
+  channel_name: string;
+  scheduled_publish_at: string;
+  display_publish_at: string;
+  timezone: string;
+  slot_number: number;
+  day_number: number;
+}
+
+export interface UploadPreviewResponse {
+  clip_count: number;
+  schedule: UploadScheduleItem[];
+}
+
 export interface HealthResponse {
   status: string;
 }
@@ -360,6 +392,41 @@ export const processVideos = async (videoIds: string[]): Promise<ProcessResponse
 
 export const getJobClips = async (videoId: string): Promise<JobClipsResponse> => {
   const response = await client.get(`/api/jobs/${videoId}/clips`);
+  return response.data;
+};
+
+// Scheduled YouTube uploads
+export const getUploadChannels = async (): Promise<{ channels: UploadChannel[] }> => {
+  const response = await client.get('/api/uploads/channels');
+  return response.data;
+};
+
+export const removeUploadChannel = async (channelId: string): Promise<{ message: string }> => {
+  const response = await client.delete(`/api/uploads/channels/${channelId}`);
+  return response.data;
+};
+
+export const getYouTubeOAuthStatus = async (): Promise<{ configured: boolean }> => {
+  const response = await client.get('/auth/youtube/status');
+  return response.data;
+};
+
+export const uploadYouTubeClientSecret = async (file: File): Promise<{ message: string }> => {
+  const formData = new FormData();
+  formData.append('file', file);
+  const response = await client.post('/auth/youtube/client-secret', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return response.data;
+};
+
+export const previewUploadSchedule = async (request: UploadScheduleRequest): Promise<UploadPreviewResponse> => {
+  const response = await client.post('/api/uploads/preview', request);
+  return response.data;
+};
+
+export const createScheduledUploads = async (request: UploadScheduleRequest): Promise<{ upload_count: number; message: string }> => {
+  const response = await client.post('/api/uploads', request);
   return response.data;
 };
 

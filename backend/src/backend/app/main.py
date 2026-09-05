@@ -2,7 +2,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.api import config, jobs, process, search, trend
+from app.api import config, jobs, process, search, trend, uploads, youtube_auth
+from app.init_db import create_tables
 from app.utils.storage import STORAGE
 
 
@@ -10,6 +11,12 @@ app = FastAPI(
     title="Slop Factory API",
     version="0.1.0",
 )
+
+
+@app.on_event("startup")
+def initialize_database():
+    """Apply additive SQLite schema changes before accepting requests."""
+    create_tables()
 
 
 # ---------------------------------------------------------
@@ -73,6 +80,18 @@ app.include_router(
     process.router,
     prefix="/api/process",
     tags=["Process"],
+)
+
+app.include_router(
+    uploads.router,
+    prefix="/api/uploads",
+    tags=["Uploads"],
+)
+
+app.include_router(
+    youtube_auth.router,
+    prefix="/auth",
+    tags=["YouTube OAuth"],
 )
 
 app.include_router(

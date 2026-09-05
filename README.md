@@ -397,6 +397,10 @@ All divisions are zero-safe (`max(x, 1)`). Higher score = more trending.
 - English alignment model loaded alongside for word-level timestamps
 - Models are lazy-loaded — only initialized on the first clip generation call in a pipeline session
 
+### YouTube upload OAuth
+
+Create a **Web application** OAuth client in Google Cloud, enable YouTube Data API v3, and register `http://localhost:8000/auth/youtube/callback` as an Authorized redirect URI. In **Settings**, upload its downloaded `client_secret.json`, then select **Connect YouTube channel**. Google consent grants `youtube.upload`; the backend stores the returned refresh token in SQLite and refreshes access tokens automatically for later uploads. The uploaded OAuth client secret and channel refresh tokens never return to the browser.
+
 ---
 
 ## Known Gotchas

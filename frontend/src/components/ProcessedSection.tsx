@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { getJobClips, archiveJobs, API_BASE_URL } from '../services/api';
-import type { Job, Clip } from '../services/api';
+import { getJobClips, archiveJobs, getUploadChannels, previewUploadSchedule, createScheduledUploads, API_BASE_URL } from '../services/api';
+import type { Job, Clip, UploadChannel, UploadScheduleItem } from '../services/api';
 
 interface ProcessedSectionProps {
   jobs: Job[];
@@ -17,6 +17,22 @@ export const ProcessedSection: React.FC<ProcessedSectionProps> = ({
   const [archivingId, setArchivingId] = useState<string | null>(null);
   const [clipsMap, setClipsMap] = useState<Record<string, Clip[]>>({});
   const [loadingClips, setLoadingClips] = useState<Record<string, boolean>>({});
+  const [selectedVideoIds, setSelectedVideoIds] = useState<string[]>([]);
+  const [uploadChannels, setUploadChannels] = useState<UploadChannel[]>([]);
+  const [channelId, setChannelId] = useState('');
+  const [videosPerDay, setVideosPerDay] = useState(3);
+  const [startDate, setStartDate] = useState(() => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    return tomorrow.toISOString().slice(0, 10);
+  });
+  const [startTime, setStartTime] = useState('09:00');
+  const [timezone, setTimezone] = useState(() => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC');
+  const [schedulePreview, setSchedulePreview] = useState<UploadScheduleItem[]>([]);
+  const [previewError, setPreviewError] = useState('');
+  const [isPreviewing, setIsPreviewing] = useState(false);
+  const [isSavingUploads, setIsSavingUploads] = useState(false);
+  const [uploadMessage, setUploadMessage] = useState('');
 
   // Filter processed and non-archived jobs
   const processedJobs = jobs.filter(
@@ -53,6 +69,81 @@ export const ProcessedSection: React.FC<ProcessedSectionProps> = ({
       }
     });
   }, [processedJobs, clipsMap, loadingClips, fetchClipsForJob]);
+
+  useEffect(() => {
+    const availableIds = new Set(processedJobs.map((job) => job.video_id));
+    setSelectedVideoIds((previous) => previous.filter((id) => availableIds.has(id)));
+  }, [processedJobs]);
+
+  useEffect(() => {
+    if (selectedVideoIds.length === 0) return;
+    getUploadChannels()
+      .then((response) => {
+        const channels = response.channels || [];
+        setUploadChannels(channels);
+        setChannelId((current) => current || channels[0]?.id || '');
+      })
+      .catch((error) => {
+        console.error('Failed to load YouTube channels:', error);
+        setUploadChannels([]);
+      });
+  }, [selectedVideoIds.length]);
+
+  const toggleSelectedVideo = (videoId: string) => {
+    setSelectedVideoIds((previous) => (
+      previous.includes(videoId)
+        ? previous.filter((id) => id !== videoId)
+        : [...previous, videoId]
+    ));
+    setSchedulePreview([]);
+    setUploadMessage('');
+  };
+
+  const uploadRequest = () => ({
+    video_ids: selectedVideoIds,
+    channel_id: channelId,
+    videos_per_day: videosPerDay,
+    start_date: startDate,
+    start_time: startTime,
+    timezone,
+  });
+
+  const handlePreview = async () => {
+    if (!channelId) {
+      setPreviewError('Configure and select a YouTube channel before previewing.');
+      return;
+    }
+    try {
+      setIsPreviewing(true);
+      setPreviewError('');
+      setUploadMessage('');
+      const response = await previewUploadSchedule(uploadRequest());
+      setSchedulePreview(response.schedule || []);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unable to build the upload schedule.';
+      setPreviewError(message);
+      setSchedulePreview([]);
+    } finally {
+      setIsPreviewing(false);
+    }
+  };
+
+  const handleSaveUploads = async () => {
+    try {
+      setIsSavingUploads(true);
+      setPreviewError('');
+      const response = await createScheduledUploads(uploadRequest());
+      setUploadMessage(response.message || `Started ${response.upload_count} upload jobs.`);
+      setSelectedVideoIds([]);
+      setSchedulePreview([]);
+      onRefresh();
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unable to create upload jobs.';
+      setPreviewError(message);
+    } finally {
+      setIsSavingUploads(false);
+    }
+  };
 
   const handleArchiveJob = async (videoId: string) => {
     try {
@@ -124,6 +215,80 @@ export const ProcessedSection: React.FC<ProcessedSectionProps> = ({
         </div>
       </div>
 
+      {selectedVideoIds.length > 0 && (
+        <section className="bg-indigo-950/30 border border-indigo-500/30 rounded-3xl p-5 sm:p-6 space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+            <div>
+              <h3 className="text-base font-bold text-white">YouTube upload schedule</h3>
+              <p className="text-xs text-slate-400 mt-1">
+                {selectedVideoIds.length} processed video{selectedVideoIds.length === 1 ? '' : 's'} selected. Every generated clip will be uploaded; clips cannot be selected individually.
+              </p>
+            </div>
+            <span className="text-xs font-bold px-3 py-1.5 rounded-xl bg-indigo-500/20 text-indigo-200 border border-indigo-400/30">
+              {schedulePreview.length} clip{schedulePreview.length === 1 ? '' : 's'} scheduled
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+            <label className="text-xs text-slate-300 space-y-1.5">
+              <span>YouTube channel</span>
+              <select value={channelId} onChange={(event) => { setChannelId(event.target.value); setSchedulePreview([]); }} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                <option value="">Select a channel</option>
+                {uploadChannels.map((channel) => <option key={channel.id} value={channel.id}>{channel.name}</option>)}
+              </select>
+            </label>
+            <label className="text-xs text-slate-300 space-y-1.5">
+              <span>Videos per day</span>
+              <input type="number" min="1" max="96" value={videosPerDay} onChange={(event) => { setVideosPerDay(Math.max(1, Number(event.target.value) || 1)); setSchedulePreview([]); }} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            </label>
+            <label className="text-xs text-slate-300 space-y-1.5">
+              <span>Start date</span>
+              <input type="date" value={startDate} onChange={(event) => { setStartDate(event.target.value); setSchedulePreview([]); }} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            </label>
+            <label className="text-xs text-slate-300 space-y-1.5">
+              <span>Start time</span>
+              <input type="time" value={startTime} onChange={(event) => { setStartTime(event.target.value); setSchedulePreview([]); }} className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            </label>
+            <label className="text-xs text-slate-300 space-y-1.5">
+              <span>Timezone</span>
+              <input value={timezone} onChange={(event) => { setTimezone(event.target.value); setSchedulePreview([]); }} placeholder="Asia/Kolkata" className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            </label>
+          </div>
+
+          {uploadChannels.length === 0 && (
+            <p className="text-xs text-amber-300">No configured YouTube channels are available. Add a channel credential to the existing multi-channel configuration first.</p>
+          )}
+          {previewError && <p className="text-xs text-rose-300">{previewError}</p>}
+          {uploadMessage && <p className="text-xs text-emerald-300">{uploadMessage}</p>}
+
+          <div className="flex flex-wrap gap-3">
+            <button onClick={handlePreview} disabled={isPreviewing || !channelId} className="px-4 py-2 text-xs font-bold rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white disabled:opacity-50">
+              {isPreviewing ? 'Building preview...' : 'Preview schedule'}
+            </button>
+            <button onClick={handleSaveUploads} disabled={isSavingUploads || schedulePreview.length === 0 || !channelId} className="px-4 py-2 text-xs font-bold rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 disabled:opacity-50">
+              {isSavingUploads ? 'Creating uploads...' : 'Save & upload scheduled videos'}
+            </button>
+          </div>
+
+          {schedulePreview.length > 0 && (
+            <div className="overflow-x-auto border border-slate-800 rounded-2xl">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-950/80 text-slate-400 uppercase tracking-wider">
+                  <tr><th className="p-3">Clip</th><th className="p-3">Source</th><th className="p-3">Day / slot</th><th className="p-3">Publish time</th></tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/80">
+                  {schedulePreview.map((item) => (
+                    <tr key={`${item.source_video_id}-${item.clip_id}`} className="text-slate-300">
+                      <td className="p-3 font-medium">{item.title}</td><td className="p-3 font-mono text-slate-500">{item.source_video_id}</td><td className="p-3">Day {item.day_number}, slot {item.slot_number}</td><td className="p-3">{new Date(item.display_publish_at).toLocaleString(undefined, { timeZone: item.timezone, dateStyle: 'medium', timeStyle: 'short' })} ({item.timezone})</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
+
       {/* Main Content Area */}
       {filteredJobs.length === 0 ? (
         <div className="bg-slate-900/60 border border-slate-800/80 rounded-3xl p-16 text-center text-slate-500">
@@ -173,6 +338,16 @@ export const ProcessedSection: React.FC<ProcessedSectionProps> = ({
                   </div>
 
                   <div className="flex items-center gap-2 shrink-0">
+                    <label className="px-3 py-1.5 text-xs font-medium text-indigo-200 bg-indigo-500/10 hover:bg-indigo-500/20 rounded-xl border border-indigo-500/30 transition-colors flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={selectedVideoIds.includes(job.video_id)}
+                        onChange={() => toggleSelectedVideo(job.video_id)}
+                        className="accent-indigo-500"
+                        aria-label={`Select ${job.title || job.video_id} for upload`}
+                      />
+                      <span>Upload all clips</span>
+                    </label>
                     <button
                       onClick={() => handleArchiveJob(job.video_id)}
                       disabled={archivingId === job.video_id}
