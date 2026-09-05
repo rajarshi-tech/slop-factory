@@ -176,7 +176,7 @@ const ConfigSection = ({ onConfigUpdate, currentConfig }: ConfigSectionProps) =>
       <button
         onClick={applyConfiguration}
         disabled={isLoading || !selectedProvider || !selectedModel}
-        className="w-full py-3.5 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white font-semibold rounded-2xl shadow-lg shadow-indigo-600/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+        className="w-full py-3.5 bg-linear-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white font-semibold rounded-2xl shadow-lg shadow-indigo-600/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed text-sm"
       >
         Save LLM Settings
       </button>
