@@ -9,7 +9,7 @@ from google import genai
 
 from app.llm.factory import get_provider_models
 from app.utils.storage import load_config, save_config
-from app.core.config import GEMINI_API_KEY, ROOT_DIR
+from app.core.config import ROOT_DIR, get_gemini_api_key
 
 
 router = APIRouter()
@@ -33,7 +33,8 @@ def check_ollama_availability() -> dict:
 
 def check_gemini_availability() -> dict:
     """Check if Gemini API key is configured and valid"""
-    if not GEMINI_API_KEY:
+    gemini_api_key = get_gemini_api_key()
+    if not gemini_api_key or not gemini_api_key.strip():
         return {
             "available": False,
             "status": "Gemini API key is not configured"
@@ -41,7 +42,7 @@ def check_gemini_availability() -> dict:
 
     try:
         # Try to initialize client to verify API key
-        client = genai.Client(api_key=GEMINI_API_KEY)
+        client = genai.Client(api_key=gemini_api_key)
         # Try to list models to verify the API key is valid
         models = list(client.models.list())
         return {
@@ -241,6 +242,12 @@ def set_api_keys(keys: dict):
 
     set_key(env_path, "YOUTUBE_API_KEY", youtube_key)
     set_key(env_path, "GEMINI_API_KEY", gemini_key if gemini_key else "")
+
+    # python-dotenv writes the file but does not update this running process.
+    # Keep the process environment in sync so provider discovery works before a
+    # development server reload (and when reload is disabled).
+    os.environ["YOUTUBE_API_KEY"] = youtube_key
+    os.environ["GEMINI_API_KEY"] = gemini_key
 
     # Touch the main.py to trigger a reload (if using --reload)
     main_py = ROOT_DIR / "backend" / "src" / "backend" / "app" / "main.py"

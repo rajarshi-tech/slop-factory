@@ -4,17 +4,11 @@ import { createPortal } from 'react-dom';
 interface ApiKeyPopupProps {
   visible: boolean;
   onClose: () => void;
-  onSubmit: (youtubeKey: string, geminiKey: string, clientId: string, clientSecret: string, redirectUri: string) => Promise<void>;
+  onSubmit: (youtubeKey: string, geminiKey: string) => Promise<void>;
   youtubeKey: string;
   setYoutubeKey: (key: string) => void;
   geminiKey: string;
   setGeminiKey: (key: string) => void;
-  clientId: string;
-  setClientId: (key: string) => void;
-  clientSecret: string;
-  setClientSecret: (key: string) => void;
-  redirectUri: string;
-  setRedirectUri: (uri: string) => void;
   isLoading: boolean;
   error: string | null;
 }
@@ -27,12 +21,6 @@ const ApiKeyPopup = ({
   setYoutubeKey,
   geminiKey,
   setGeminiKey,
-  clientId,
-  setClientId,
-  clientSecret,
-  setClientSecret,
-  redirectUri,
-  setRedirectUri,
   isLoading,
   error,
 }: ApiKeyPopupProps) => {
@@ -93,15 +81,6 @@ const ApiKeyPopup = ({
               Optional. For cloud-based LLM analysis.
             </p>
           </div>
-          <div className="pt-2 border-t border-slate-800">
-            <p className="text-sm font-semibold text-slate-200 mb-1">YouTube OAuth Client</p>
-            <p className="text-xs text-slate-500 mb-3">Needed to connect a channel for scheduled uploads.</p>
-            <div className="space-y-3">
-              <input type="text" autoComplete="off" placeholder="Google OAuth client ID" value={clientId} onChange={(e) => setClientId(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-2xl px-4 py-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-              <input type="password" autoComplete="off" placeholder="Google OAuth client secret" value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-2xl px-4 py-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-              <input type="url" autoComplete="off" placeholder="http://localhost:8000/auth/youtube/callback" value={redirectUri} onChange={(e) => setRedirectUri(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-2xl px-4 py-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-            </div>
-          </div>
         </div>
         <div className="flex gap-3 pt-6">
           <button
@@ -112,7 +91,7 @@ const ApiKeyPopup = ({
             Cancel
           </button>
           <button
-            onClick={() => onSubmit(youtubeKey, geminiKey, clientId, clientSecret, redirectUri)}
+            onClick={() => onSubmit(youtubeKey, geminiKey)}
             disabled={!youtubeKey.trim() || isLoading}
             className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold rounded-xl shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >

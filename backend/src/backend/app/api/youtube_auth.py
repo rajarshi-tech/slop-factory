@@ -3,6 +3,9 @@
 from urllib.parse import urlencode
 
 import json
+import os
+
+from dotenv import set_key
 
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from fastapi.responses import RedirectResponse
@@ -10,7 +13,14 @@ from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from pydantic import BaseModel
 
-from app.core.config import FRONTEND_URL, YOUTUBE_OAUTH_CLIENT_ID, YOUTUBE_OAUTH_CLIENT_SECRET, YOUTUBE_OAUTH_REDIRECT_URI
+from app.core.config import (
+    DEFAULT_FRONTEND_URL,
+    ROOT_DIR,
+    get_frontend_url,
+    get_youtube_oauth_client_id,
+    get_youtube_oauth_client_secret,
+    get_youtube_oauth_redirect_uri,
+)
 from app.init_db import (
     consume_youtube_oauth_state,
     create_youtube_oauth_state,
@@ -31,13 +41,13 @@ class YouTubeOAuthClientConfig(BaseModel):
 
 def _redirect_uri() -> str:
     database_config = get_youtube_oauth_client_config()
-    return (database_config or {}).get("redirect_uri") or YOUTUBE_OAUTH_REDIRECT_URI
+    return (database_config or {}).get("redirect_uri") or get_youtube_oauth_redirect_uri()
 
 
 def _client_config() -> dict:
     database_config = get_youtube_oauth_client_config()
-    client_id = (database_config or {}).get("client_id") or YOUTUBE_OAUTH_CLIENT_ID
-    client_secret = (database_config or {}).get("client_secret") or YOUTUBE_OAUTH_CLIENT_SECRET
+    client_id = (database_config or {}).get("client_id") or get_youtube_oauth_client_id()
+    client_secret = (database_config or {}).get("client_secret") or get_youtube_oauth_client_secret()
     if not client_id or not client_secret:
         raise HTTPException(
             status_code=400,
@@ -60,7 +70,24 @@ def _oauth_client_credentials() -> tuple[str, str]:
 
 
 def _redirect_to_frontend(status: str, message: str) -> RedirectResponse:
-    return RedirectResponse(f"{FRONTEND_URL}/?{urlencode({'youtube': status, 'message': message})}")
+    return RedirectResponse(f"{get_frontend_url()}/?{urlencode({'youtube': status, 'message': message})}")
+
+
+def _save_oauth_environment(client_id: str, client_secret: str, redirect_uri: str) -> None:
+    """Persist OAuth settings to .env and make them available to this process."""
+    env_path = ROOT_DIR / ".env"
+    env_path.touch(exist_ok=True)
+    values = {
+        "YOUTUBE_OAUTH_CLIENT_ID": client_id,
+        "YOUTUBE_OAUTH_CLIENT_SECRET": client_secret,
+        "YOUTUBE_OAUTH_REDIRECT_URI": redirect_uri,
+        # A Google client secret does not contain the frontend URL. Persist the
+        # configured value, or the local frontend default, for a complete setup.
+        "FRONTEND_URL": get_frontend_url() or DEFAULT_FRONTEND_URL,
+    }
+    for key, value in values.items():
+        set_key(env_path, key, value)
+        os.environ[key] = value
 
 
 @router.get("/youtube")
@@ -97,7 +124,7 @@ def get_youtube_client_config():
     return {
         "configured": bool(config),
         "client_id": (config or {}).get("client_id", ""),
-        "redirect_uri": (config or {}).get("redirect_uri") or YOUTUBE_OAUTH_REDIRECT_URI,
+        "redirect_uri": (config or {}).get("redirect_uri") or get_youtube_oauth_redirect_uri(),
     }
 
 
@@ -110,6 +137,7 @@ def save_youtube_client_config(config: YouTubeOAuthClientConfig):
     save_youtube_oauth_client_config(
         config.client_id.strip(), client_secret, config.redirect_uri.strip()
     )
+    _save_oauth_environment(config.client_id.strip(), client_secret, config.redirect_uri.strip())
     return {"message": "YouTube OAuth client configuration saved."}
 
 
@@ -130,13 +158,16 @@ async def upload_oauth_client_secret(file: UploadFile = File(...)):
             detail="Use a Google OAuth client_secret.json created as a Web application, not a Desktop application or API key.",
         )
     redirect_uris = web.get("redirect_uris")
-    redirect_uri = _redirect_uri()
-    if not isinstance(redirect_uris, list) or redirect_uri not in redirect_uris:
+    if not isinstance(redirect_uris, list) or not redirect_uris or not all(isinstance(uri, str) and uri.strip() for uri in redirect_uris):
         raise HTTPException(
             status_code=400,
-            detail=f"Add {redirect_uri} as an Authorized redirect URI in Google Cloud, download a new JSON file, then upload it here.",
+            detail="The uploaded Web application client_secret.json must contain at least one Authorized redirect URI.",
         )
-    save_youtube_oauth_client_config(web["client_id"], web["client_secret"], redirect_uri)
+    redirect_uri = redirect_uris[0].strip()
+    client_id = web["client_id"].strip()
+    client_secret = web["client_secret"].strip()
+    save_youtube_oauth_client_config(client_id, client_secret, redirect_uri)
+    _save_oauth_environment(client_id, client_secret, redirect_uri)
     return {"message": "Google OAuth client configured. You can now connect a YouTube channel."}
 
 

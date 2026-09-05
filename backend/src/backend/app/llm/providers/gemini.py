@@ -2,7 +2,7 @@ import json
 
 from google import genai
 from google.genai import types
-from app.core.config import GEMINI_API_KEY
+from app.core.config import get_gemini_api_key
 from app.llm.base import LLMProvider
 
 
@@ -10,7 +10,7 @@ class GeminiProvider(LLMProvider):
 
     def __init__(self, model: str):
         self.model = model
-        self.client = genai.Client(api_key=GEMINI_API_KEY)
+        self.client = genai.Client(api_key=get_gemini_api_key())
 
     def generate(
         self,
@@ -39,7 +39,7 @@ class GeminiProvider(LLMProvider):
     @classmethod
     def list_models(cls) -> list[str]:
 
-        client = genai.Client()
+        client = genai.Client(api_key=get_gemini_api_key())
 
         models = client.models.list()
 
