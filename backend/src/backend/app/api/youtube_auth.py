@@ -3,6 +3,7 @@
 from urllib.parse import urlencode
 
 import json
+import logging
 import os
 
 from dotenv import set_key
@@ -11,6 +12,8 @@ from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from fastapi.responses import RedirectResponse
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
+from oauthlib.oauth2.rfc6749.errors import OAuth2Error
 from pydantic import BaseModel
 
 from app.core.config import (
@@ -31,6 +34,7 @@ from app.init_db import (
 from app.services.youtube import YOUTUBE_UPLOAD_SCOPE
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 class YouTubeOAuthClientConfig(BaseModel):
@@ -71,6 +75,31 @@ def _oauth_client_credentials() -> tuple[str, str]:
 
 def _redirect_to_frontend(status: str, message: str) -> RedirectResponse:
     return RedirectResponse(f"{get_frontend_url()}/?{urlencode({'youtube': status, 'message': message})}")
+
+
+def _callback_error_message(error: Exception) -> str:
+    """Return a useful OAuth callback error without exposing credentials or tokens."""
+    if isinstance(error, OAuth2Error):
+        return (
+            "Google rejected the authorization-code exchange. Re-upload the downloaded "
+            "client_secret.json for this Web OAuth client, then connect the channel again."
+        )
+
+    if isinstance(error, HttpError):
+        status = getattr(error.resp, "status", None)
+        if status == 403:
+            return (
+                "Google authorized the account, but YouTube Data API v3 rejected the channel lookup. "
+                "Enable YouTube Data API v3 in the same Google Cloud project as this OAuth client."
+            )
+        if status == 401:
+            return "Google rejected the new access token. Reconnect the channel and approve access again."
+        return f"YouTube Data API rejected the channel lookup (HTTP {status or 'unknown'})."
+
+    if isinstance(error, OSError):
+        return "The backend could not reach Google to finish the channel connection. Check your network and retry."
+
+    return "The backend could not finish connecting the YouTube channel. Check the server log for the OAuth callback error."
 
 
 def _save_oauth_environment(client_id: str, client_secret: str, redirect_uri: str) -> None:
@@ -203,5 +232,8 @@ def youtube_oauth_callback(request: Request, state: str | None = None, error: st
             refresh_token=credentials.refresh_token,
         )
         return _redirect_to_frontend("connected", "YouTube channel connected successfully.")
-    except Exception:
-        return _redirect_to_frontend("error", "Unable to connect the YouTube channel. Check OAuth client settings and try again.")
+    except Exception as exc:
+        # Keep the detailed exception in the backend log. The browser receives
+        # only an actionable, non-sensitive explanation.
+        logger.exception("YouTube OAuth callback failed")
+        return _redirect_to_frontend("error", _callback_error_message(exc))
