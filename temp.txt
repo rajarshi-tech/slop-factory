@@ -1,7 +1,6 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import { checkProviders, checkModels, updateLLMConfig, checkApiKeys, setApiKeys } from '../services/api';
 import type { LLMConfig, ModelsResponse, ApiKeyStatus } from '../services/api';
-import ApiKeyPopup from './ApiKeyPopup';
 
 interface ConfigSectionProps {
   onConfigUpdate: (config: LLMConfig) => void;
@@ -17,10 +16,8 @@ const ConfigSection = ({ onConfigUpdate, currentConfig }: ConfigSectionProps) =>
   const [error, setError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string>('');
   const [showApiKeyPopup, setShowApiKeyPopup] = useState(false);
-  const [youtubeKey, setYoutubeKey] = useState<string>('');
-  const [geminiKey, setGeminiKey] = useState<string>('');
-  const [isSavingApiKeys, setIsSavingApiKeys] = useState(false);
   const [apiKeyError, setApiKeyError] = useState<string | null>(null);
+  const [apiKeySuccess, setApiKeySuccess] = useState<boolean>(false);
 
   useEffect(() => {
     setSelectedProvider(currentConfig.provider);
@@ -113,24 +110,20 @@ const ConfigSection = ({ onConfigUpdate, currentConfig }: ConfigSectionProps) =>
   };
 
   const handleApiKeySubmit = async (youtubeKey: string, geminiKey: string) => {
-    setIsSavingApiKeys(true);
     setApiKeyError(null);
+    setApiKeySuccess(false);
+    setIsLoading(true);
 
     try {
-      await setApiKeys({ youtube_key: youtubeKey, gemini_key: geminiKey || '' });
+      const response = await setApiKeys({ youtube_key: youtubeKey, gemini_key: geminiKey || '' });
+      setApiKeySuccess(true);
       setShowApiKeyPopup(false);
       setStatusMessage('API keys saved successfully! Server will restart.');
-      await loadProvidersAndModels();
     } catch (err: unknown) {
-      setApiKeyError(`Failed to save API keys: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      setApiKeyError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
-      setIsSavingApiKeys(false);
+      setIsLoading(false);
     }
-  };
-
-  const openApiKeyPopup = () => {
-    setApiKeyError(null);
-    setShowApiKeyPopup(true);
   };
 
   return (
@@ -215,30 +208,13 @@ const ConfigSection = ({ onConfigUpdate, currentConfig }: ConfigSectionProps) =>
         </div>
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-3">
-        <button onClick={openApiKeyPopup} className="px-5 py-3.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-semibold rounded-2xl border border-slate-700 transition-colors">
-          Manage API Keys
-        </button>
-        <button
-          onClick={applyConfiguration}
-          disabled={isLoading || !selectedProvider || !selectedModel}
-          className="flex-1 py-3.5 bg-linear-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white font-semibold rounded-2xl shadow-lg shadow-indigo-600/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-        >
-          Save LLM Settings
-        </button>
-      </div>
-
-      <ApiKeyPopup
-        visible={showApiKeyPopup}
-        onClose={() => setShowApiKeyPopup(false)}
-        onSubmit={handleApiKeySubmit}
-        youtubeKey={youtubeKey}
-        setYoutubeKey={setYoutubeKey}
-        geminiKey={geminiKey}
-        setGeminiKey={setGeminiKey}
-        isLoading={isSavingApiKeys}
-        error={apiKeyError}
-      />
+      <button
+        onClick={applyConfiguration}
+        disabled={isLoading || !selectedProvider || !selectedModel}
+        className="w-full py-3.5 bg-linear-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white font-semibold rounded-2xl shadow-lg shadow-indigo-600/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+      >
+        Save LLM Settings
+      </button>
     </div>
   );
 };

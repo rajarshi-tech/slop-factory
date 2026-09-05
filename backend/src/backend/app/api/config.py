@@ -1,4 +1,7 @@
 import json
+import os
+from pathlib import Path
+from dotenv import load_dotenv, set_key
 
 from fastapi import APIRouter, HTTPException
 import ollama
@@ -6,7 +9,7 @@ from google import genai
 
 from app.llm.factory import get_provider_models
 from app.utils.storage import load_config, save_config
-from app.core.config import GEMINI_API_KEY
+from app.core.config import GEMINI_API_KEY, ROOT_DIR
 
 
 router = APIRouter()
@@ -204,3 +207,43 @@ def set_params(params: dict):
     save_config(config)
 
     return config["params"]
+
+
+# check api keys
+@router.get("/check-keys")
+def check_keys():
+    env_path = ROOT_DIR / ".env"
+    if not env_path.exists():
+        return {"youtube_key_set": False, "gemini_key_set": False}
+
+    load_dotenv(env_path)
+    youtube_key = os.getenv("YOUTUBE_API_KEY")
+    gemini_key = os.getenv("GEMINI_API_KEY")
+
+    return {
+        "youtube_key_set": bool(youtube_key and youtube_key.strip()),
+        "gemini_key_set": bool(gemini_key and gemini_key.strip())
+    }
+
+
+# set api keys
+@router.post("/set-keys")
+def set_api_keys(keys: dict):
+    youtube_key = keys.get("youtube_key", "").strip()
+    gemini_key = keys.get("gemini_key", "").strip()
+
+    if not youtube_key:
+        raise HTTPException(status_code=400, detail="YouTube API key is required")
+
+    env_path = ROOT_DIR / ".env"
+    if not env_path.exists():
+        env_path.touch()
+
+    set_key(env_path, "YOUTUBE_API_KEY", youtube_key)
+    set_key(env_path, "GEMINI_API_KEY", gemini_key if gemini_key else "")
+
+    # Touch the main.py to trigger a reload (if using --reload)
+    main_py = ROOT_DIR / "backend" / "src" / "backend" / "app" / "main.py"
+    main_py.touch()
+
+    return {"message": "API keys saved successfully. The server will restart to apply the changes."}

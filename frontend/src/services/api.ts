@@ -104,6 +104,11 @@ export interface FullConfig {
   params: SearchParams;
 }
 
+export interface ApiKeyStatus {
+  youtube_key_set: boolean;
+  gemini_key_set: boolean;
+}
+
 export interface Job {
   id: number;
   video_id: string;
@@ -238,6 +243,17 @@ export const updateLLMConfig = async (config: LLMConfig): Promise<LLMConfig> => 
 
 export const updateSearchParams = async (params: SearchParams): Promise<SearchParams> => {
   const response = await client.put('/api/config/search/params', params);
+  return response.data;
+};
+
+// API Keys
+export const checkApiKeys = async (): Promise<ApiKeyStatus> => {
+  const response = await client.get('/api/config/check-keys');
+  return response.data;
+};
+
+export const setApiKeys = async (keys: { youtube_key: string; gemini_key: string }): Promise<{ message: string }> => {
+  const response = await client.post('/api/config/set-keys', keys);
   return response.data;
 };
 
