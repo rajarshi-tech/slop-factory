@@ -80,10 +80,25 @@ def _redirect_to_frontend(status: str, message: str) -> RedirectResponse:
 def _callback_error_message(error: Exception) -> str:
     """Return a useful OAuth callback error without exposing credentials or tokens."""
     if isinstance(error, OAuth2Error):
-        return (
-            "Google rejected the authorization-code exchange. Re-upload the downloaded "
-            "client_secret.json for this Web OAuth client, then connect the channel again."
-        )
+        error_code = error.error or error.__class__.__name__
+        messages = {
+            "invalid_client": (
+                "Google rejected the OAuth client credentials. The saved client ID and client secret "
+                "do not belong to the same active Web OAuth client."
+            ),
+            "invalid_grant": (
+                "Google rejected the one-time authorization code. Start a new connection from the app; "
+                "do not reuse, refresh, or go Back to a previous Google consent page."
+            ),
+            "mismatching_state": "The OAuth session verification failed. Start a new channel connection.",
+            "insecure_transport": (
+                "The backend rejected the local HTTP callback before exchanging the Google code. "
+                "This is a local-development OAuth transport configuration error."
+            ),
+            "missing_code": "Google returned to the callback without an authorization code. Start a new connection.",
+        }
+        message = messages.get(error_code, "Google rejected the OAuth callback.")
+        return f"OAuth callback failed ({error_code}): {message}"
 
     if isinstance(error, HttpError):
         status = getattr(error.resp, "status", None)
