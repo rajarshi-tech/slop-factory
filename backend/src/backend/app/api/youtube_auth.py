@@ -1,6 +1,6 @@
 """Google OAuth 2.0 connection flow for YouTube upload channels."""
 
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 import json
 import logging
@@ -75,6 +75,17 @@ def _oauth_client_credentials() -> tuple[str, str]:
 
 def _redirect_to_frontend(status: str, message: str) -> RedirectResponse:
     return RedirectResponse(f"{get_frontend_url()}/?{urlencode({'youtube': status, 'message': message})}")
+
+
+def _allow_localhost_oauth_callback() -> None:
+    """Allow OAuthLib's HTTP exception only for an explicit local callback.
+
+    Google permits HTTP for localhost redirect URIs during local development,
+    while OAuthLib otherwise requires HTTPS for every transport.
+    """
+    callback = urlparse(_redirect_uri())
+    if callback.scheme == "http" and callback.hostname in {"localhost", "127.0.0.1", "::1"}:
+        os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
 
 
 def _callback_error_message(error: Exception) -> str:
@@ -223,6 +234,7 @@ def youtube_oauth_callback(request: Request, state: str | None = None, error: st
         return _redirect_to_frontend("error", "The OAuth session expired. Start the connection again.")
 
     try:
+        _allow_localhost_oauth_callback()
         flow = Flow.from_client_config(
             _client_config(), scopes=[YOUTUBE_UPLOAD_SCOPE], state=state, autogenerate_code_verifier=False
         )
