@@ -31,7 +31,7 @@ from app.init_db import (
     save_youtube_channel,
     save_youtube_oauth_client_config,
 )
-from app.services.youtube import YOUTUBE_UPLOAD_SCOPE
+from app.services.youtube import YOUTUBE_OAUTH_SCOPES
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -114,9 +114,28 @@ def _callback_error_message(error: Exception) -> str:
     if isinstance(error, HttpError):
         status = getattr(error.resp, "status", None)
         if status == 403:
+            reason = ""
+            try:
+                payload = json.loads(error.content.decode("utf-8"))
+                reasons = payload.get("error", {}).get("errors", [])
+                if reasons:
+                    reason = str(reasons[0].get("reason", ""))
+            except (AttributeError, UnicodeDecodeError, json.JSONDecodeError):
+                pass
+            if reason == "insufficientPermissions":
+                return (
+                    "Google granted upload access but denied the channel lookup. Reconnect and approve "
+                    "the new YouTube read permission."
+                )
+            if reason in {"accessNotConfigured", "serviceDisabled"}:
+                return "YouTube Data API v3 is not enabled for this OAuth client's Google Cloud project."
+            if reason in {"quotaExceeded", "dailyLimitExceeded"}:
+                return "The YouTube Data API quota for this Google Cloud project is exhausted."
+            if reason == "youtubeSignupRequired":
+                return "The Google account does not have a YouTube channel. Create or select a YouTube channel first."
             return (
-                "Google authorized the account, but YouTube Data API v3 rejected the channel lookup. "
-                "Enable YouTube Data API v3 in the same Google Cloud project as this OAuth client."
+                "Google authorized the account, but YouTube Data API v3 rejected the channel lookup "
+                "(HTTP 403)."
             )
         if status == 401:
             return "Google rejected the new access token. Reconnect the channel and approve access again."
@@ -148,7 +167,7 @@ def _save_oauth_environment(client_id: str, client_secret: str, redirect_uri: st
 @router.get("/youtube")
 def start_youtube_oauth():
     flow = Flow.from_client_config(
-        _client_config(), scopes=[YOUTUBE_UPLOAD_SCOPE], autogenerate_code_verifier=False
+        _client_config(), scopes=YOUTUBE_OAUTH_SCOPES, autogenerate_code_verifier=False
     )
     # This is a confidential server-side web client. Keep PKCE disabled because
     # the verifier is not persisted alongside the callback state.
@@ -236,7 +255,7 @@ def youtube_oauth_callback(request: Request, state: str | None = None, error: st
     try:
         _allow_localhost_oauth_callback()
         flow = Flow.from_client_config(
-            _client_config(), scopes=[YOUTUBE_UPLOAD_SCOPE], state=state, autogenerate_code_verifier=False
+            _client_config(), scopes=YOUTUBE_OAUTH_SCOPES, state=state, autogenerate_code_verifier=False
         )
         flow.autogenerate_code_verifier = False
         flow.code_verifier = None

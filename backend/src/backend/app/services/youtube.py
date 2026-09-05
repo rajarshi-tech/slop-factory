@@ -10,6 +10,10 @@ from googleapiclient.http import MediaFileUpload
 from app.init_db import get_youtube_channel
 
 YOUTUBE_UPLOAD_SCOPE = "https://www.googleapis.com/auth/youtube.upload"
+YOUTUBE_CHANNEL_READ_SCOPE = "https://www.googleapis.com/auth/youtube.readonly"
+# Connecting a channel first reads its public identity with channels.list, then
+# later uploads videos. Keep these two permissions explicit and minimal.
+YOUTUBE_OAUTH_SCOPES = (YOUTUBE_UPLOAD_SCOPE, YOUTUBE_CHANNEL_READ_SCOPE)
 
 
 class YouTubeServiceError(RuntimeError):
