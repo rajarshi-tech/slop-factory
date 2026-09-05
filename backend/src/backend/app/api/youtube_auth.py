@@ -35,7 +35,7 @@ def _client_config() -> dict:
         "web": {
             "client_id": client_id,
             "client_secret": client_secret,
-            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "auth_uri": "https://accounts.google.com/o/oauth2/v2/auth",
             "token_uri": "https://oauth2.googleapis.com/token",
             "redirect_uris": [YOUTUBE_OAUTH_REDIRECT_URI],
         }
@@ -53,7 +53,12 @@ def _redirect_to_frontend(status: str, message: str) -> RedirectResponse:
 
 @router.get("/youtube")
 def start_youtube_oauth():
-    flow = Flow.from_client_config(_client_config(), scopes=[YOUTUBE_UPLOAD_SCOPE])
+    # This is a confidential server-side web client. Disable PKCE because its
+    # verifier would otherwise need to be persisted alongside the callback
+    # state; the client secret protects the authorization-code exchange.
+    flow = Flow.from_client_config(
+        _client_config(), scopes=[YOUTUBE_UPLOAD_SCOPE], autogenerate_code_verifier=False
+    )
     flow.redirect_uri = YOUTUBE_OAUTH_REDIRECT_URI
     authorization_url, state = flow.authorization_url(
         access_type="offline",
@@ -107,7 +112,9 @@ def youtube_oauth_callback(request: Request, state: str | None = None, error: st
         return _redirect_to_frontend("error", "The OAuth session expired. Start the connection again.")
 
     try:
-        flow = Flow.from_client_config(_client_config(), scopes=[YOUTUBE_UPLOAD_SCOPE], state=state)
+        flow = Flow.from_client_config(
+            _client_config(), scopes=[YOUTUBE_UPLOAD_SCOPE], state=state, autogenerate_code_verifier=False
+        )
         flow.redirect_uri = YOUTUBE_OAUTH_REDIRECT_URI
         flow.fetch_token(authorization_response=str(request.url))
         credentials = flow.credentials
