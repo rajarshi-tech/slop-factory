@@ -8,6 +8,7 @@ from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from fastapi.responses import RedirectResponse
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
+from pydantic import BaseModel
 
 from app.core.config import FRONTEND_URL, YOUTUBE_OAUTH_CLIENT_ID, YOUTUBE_OAUTH_CLIENT_SECRET, YOUTUBE_OAUTH_REDIRECT_URI
 from app.init_db import (
@@ -20,6 +21,17 @@ from app.init_db import (
 from app.services.youtube import YOUTUBE_UPLOAD_SCOPE
 
 router = APIRouter()
+
+
+class YouTubeOAuthClientConfig(BaseModel):
+    client_id: str
+    client_secret: str
+    redirect_uri: str
+
+
+def _redirect_uri() -> str:
+    database_config = get_youtube_oauth_client_config()
+    return (database_config or {}).get("redirect_uri") or YOUTUBE_OAUTH_REDIRECT_URI
 
 
 def _client_config() -> dict:
@@ -35,9 +47,9 @@ def _client_config() -> dict:
         "web": {
             "client_id": client_id,
             "client_secret": client_secret,
-            "auth_uri": "https://accounts.google.com/o/oauth2/v2/auth",
-            "token_uri": "https://oauth2.googleapis.com/token",
-            "redirect_uris": [YOUTUBE_OAUTH_REDIRECT_URI],
+            "auth_uri": (database_config or {}).get("auth_uri") or "https://accounts.google.com/o/oauth2/v2/auth",
+            "token_uri": (database_config or {}).get("token_uri") or "https://oauth2.googleapis.com/token",
+            "redirect_uris": [_redirect_uri()],
         }
     }
 
@@ -53,13 +65,14 @@ def _redirect_to_frontend(status: str, message: str) -> RedirectResponse:
 
 @router.get("/youtube")
 def start_youtube_oauth():
-    # This is a confidential server-side web client. Disable PKCE because its
-    # verifier would otherwise need to be persisted alongside the callback
-    # state; the client secret protects the authorization-code exchange.
     flow = Flow.from_client_config(
         _client_config(), scopes=[YOUTUBE_UPLOAD_SCOPE], autogenerate_code_verifier=False
     )
-    flow.redirect_uri = YOUTUBE_OAUTH_REDIRECT_URI
+    # This is a confidential server-side web client. Keep PKCE disabled because
+    # the verifier is not persisted alongside the callback state.
+    flow.autogenerate_code_verifier = False
+    flow.code_verifier = None
+    flow.redirect_uri = _redirect_uri()
     authorization_url, state = flow.authorization_url(
         access_type="offline",
         prompt="consent",
@@ -76,6 +89,28 @@ def youtube_oauth_status():
         return {"configured": True}
     except HTTPException:
         return {"configured": False}
+
+
+@router.get("/youtube/client-config")
+def get_youtube_client_config():
+    config = get_youtube_oauth_client_config()
+    return {
+        "configured": bool(config),
+        "client_id": (config or {}).get("client_id", ""),
+        "redirect_uri": (config or {}).get("redirect_uri") or YOUTUBE_OAUTH_REDIRECT_URI,
+    }
+
+
+@router.put("/youtube/client-config")
+def save_youtube_client_config(config: YouTubeOAuthClientConfig):
+    existing_config = get_youtube_oauth_client_config()
+    client_secret = config.client_secret.strip() or (existing_config or {}).get("client_secret", "")
+    if not config.client_id.strip() or not client_secret or not config.redirect_uri.strip():
+        raise HTTPException(status_code=400, detail="Client ID, client secret, and redirect URI are required.")
+    save_youtube_oauth_client_config(
+        config.client_id.strip(), client_secret, config.redirect_uri.strip()
+    )
+    return {"message": "YouTube OAuth client configuration saved."}
 
 
 @router.post("/youtube/client-secret")
@@ -95,12 +130,13 @@ async def upload_oauth_client_secret(file: UploadFile = File(...)):
             detail="Use a Google OAuth client_secret.json created as a Web application, not a Desktop application or API key.",
         )
     redirect_uris = web.get("redirect_uris")
-    if not isinstance(redirect_uris, list) or YOUTUBE_OAUTH_REDIRECT_URI not in redirect_uris:
+    redirect_uri = _redirect_uri()
+    if not isinstance(redirect_uris, list) or redirect_uri not in redirect_uris:
         raise HTTPException(
             status_code=400,
-            detail=f"Add {YOUTUBE_OAUTH_REDIRECT_URI} as an Authorized redirect URI in Google Cloud, download a new JSON file, then upload it here.",
+            detail=f"Add {redirect_uri} as an Authorized redirect URI in Google Cloud, download a new JSON file, then upload it here.",
         )
-    save_youtube_oauth_client_config(web["client_id"], web["client_secret"])
+    save_youtube_oauth_client_config(web["client_id"], web["client_secret"], redirect_uri)
     return {"message": "Google OAuth client configured. You can now connect a YouTube channel."}
 
 
@@ -115,7 +151,9 @@ def youtube_oauth_callback(request: Request, state: str | None = None, error: st
         flow = Flow.from_client_config(
             _client_config(), scopes=[YOUTUBE_UPLOAD_SCOPE], state=state, autogenerate_code_verifier=False
         )
-        flow.redirect_uri = YOUTUBE_OAUTH_REDIRECT_URI
+        flow.autogenerate_code_verifier = False
+        flow.code_verifier = None
+        flow.redirect_uri = _redirect_uri()
         flow.fetch_token(authorization_response=str(request.url))
         credentials = flow.credentials
         if not credentials.refresh_token:

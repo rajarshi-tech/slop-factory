@@ -109,6 +109,12 @@ export interface ApiKeyStatus {
   gemini_key_set: boolean;
 }
 
+export interface YouTubeOAuthClientConfig {
+  configured: boolean;
+  client_id: string;
+  redirect_uri: string;
+}
+
 export interface VideoMetadata {
   id?: string;
   title?: string;
@@ -316,6 +322,20 @@ export const checkApiKeys = async (): Promise<ApiKeyStatus> => {
 
 export const setApiKeys = async (keys: { youtube_key: string; gemini_key: string }): Promise<{ message: string }> => {
   const response = await client.post('/api/config/set-keys', keys);
+  return response.data;
+};
+
+export const getYouTubeOAuthClientConfig = async (): Promise<YouTubeOAuthClientConfig> => {
+  const response = await client.get('/auth/youtube/client-config');
+  return response.data;
+};
+
+export const setYouTubeOAuthClientConfig = async (config: {
+  client_id: string;
+  client_secret: string;
+  redirect_uri: string;
+}): Promise<{ message: string }> => {
+  const response = await client.put('/auth/youtube/client-config', config);
   return response.data;
 };
 

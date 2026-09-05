@@ -112,10 +112,14 @@ def create_tables():
         id INTEGER PRIMARY KEY CHECK (id = 1),
         client_id TEXT NOT NULL,
         client_secret TEXT NOT NULL,
+        redirect_uri TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
     """)
+    oauth_columns = {row[1] for row in db.execute("PRAGMA table_info(youtube_oauth_client_config)").fetchall()}
+    if "redirect_uri" not in oauth_columns:
+        db.execute("ALTER TABLE youtube_oauth_client_config ADD COLUMN redirect_uri TEXT")
 
     db.commit()
     db.close()
@@ -267,25 +271,26 @@ def consume_youtube_oauth_state(state: str) -> bool:
 def get_youtube_oauth_client_config() -> Optional[dict]:
     db = get_db()
     try:
-        row = db.execute("SELECT client_id, client_secret, created_at, updated_at FROM youtube_oauth_client_config WHERE id = 1").fetchone()
+        row = db.execute("SELECT client_id, client_secret, redirect_uri, created_at, updated_at FROM youtube_oauth_client_config WHERE id = 1").fetchone()
         return dict(row) if row else None
     finally:
         db.close()
 
 
-def save_youtube_oauth_client_config(client_id: str, client_secret: str) -> None:
+def save_youtube_oauth_client_config(client_id: str, client_secret: str, redirect_uri: Optional[str] = None) -> None:
     """Store the OAuth application's client secret server-side for channel connection."""
     db = get_db()
     try:
         now = datetime.now().isoformat()
         db.execute("""
-            INSERT INTO youtube_oauth_client_config (id, client_id, client_secret, created_at, updated_at)
-            VALUES (1, ?, ?, ?, ?)
+            INSERT INTO youtube_oauth_client_config (id, client_id, client_secret, redirect_uri, created_at, updated_at)
+            VALUES (1, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 client_id = excluded.client_id,
                 client_secret = excluded.client_secret,
+                redirect_uri = excluded.redirect_uri,
                 updated_at = excluded.updated_at
-        """, (client_id, client_secret, now, now))
+        """, (client_id, client_secret, redirect_uri, now, now))
         db.commit()
     except Exception:
         db.rollback()

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { checkProviders, checkModels, updateLLMConfig, checkApiKeys, setApiKeys } from '../services/api';
+import { checkProviders, checkModels, updateLLMConfig, checkApiKeys, setApiKeys, getYouTubeOAuthClientConfig, setYouTubeOAuthClientConfig } from '../services/api';
 import type { LLMConfig, ModelsResponse, ApiKeyStatus } from '../services/api';
 import ApiKeyPopup from './ApiKeyPopup';
 
@@ -19,6 +19,9 @@ const ConfigSection = ({ onConfigUpdate, currentConfig }: ConfigSectionProps) =>
   const [showApiKeyPopup, setShowApiKeyPopup] = useState(false);
   const [youtubeKey, setYoutubeKey] = useState<string>('');
   const [geminiKey, setGeminiKey] = useState<string>('');
+  const [clientId, setClientId] = useState<string>('');
+  const [clientSecret, setClientSecret] = useState<string>('');
+  const [redirectUri, setRedirectUri] = useState<string>('http://localhost:8000/auth/youtube/callback');
   const [isSavingApiKeys, setIsSavingApiKeys] = useState(false);
   const [apiKeyError, setApiKeyError] = useState<string | null>(null);
 
@@ -112,12 +115,23 @@ const ConfigSection = ({ onConfigUpdate, currentConfig }: ConfigSectionProps) =>
     }
   };
 
-  const handleApiKeySubmit = async (youtubeKey: string, geminiKey: string) => {
+  const handleApiKeySubmit = async (youtubeKey: string, geminiKey: string, clientId: string, clientSecret: string, redirectUri: string) => {
     setIsSavingApiKeys(true);
     setApiKeyError(null);
 
     try {
       await setApiKeys({ youtube_key: youtubeKey, gemini_key: geminiKey || '' });
+      const hasOAuthConfig = clientId.trim() || clientSecret.trim() || redirectUri.trim() !== 'http://localhost:8000/auth/youtube/callback';
+      if (hasOAuthConfig) {
+        if (!clientId.trim() || !redirectUri.trim()) {
+          throw new Error('Complete the YouTube OAuth client ID and redirect URI.');
+        }
+        await setYouTubeOAuthClientConfig({
+          client_id: clientId,
+          client_secret: clientSecret,
+          redirect_uri: redirectUri,
+        });
+      }
       setShowApiKeyPopup(false);
       setStatusMessage('API keys saved successfully! Server will restart.');
       await loadProvidersAndModels();
@@ -128,8 +142,15 @@ const ConfigSection = ({ onConfigUpdate, currentConfig }: ConfigSectionProps) =>
     }
   };
 
-  const openApiKeyPopup = () => {
+  const openApiKeyPopup = async () => {
     setApiKeyError(null);
+    try {
+      const config = await getYouTubeOAuthClientConfig();
+      setClientId(config.client_id);
+      setRedirectUri(config.redirect_uri);
+    } catch (err) {
+      setApiKeyError(`Failed to load OAuth settings: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
     setShowApiKeyPopup(true);
   };
 
@@ -236,6 +257,12 @@ const ConfigSection = ({ onConfigUpdate, currentConfig }: ConfigSectionProps) =>
         setYoutubeKey={setYoutubeKey}
         geminiKey={geminiKey}
         setGeminiKey={setGeminiKey}
+        clientId={clientId}
+        setClientId={setClientId}
+        clientSecret={clientSecret}
+        setClientSecret={setClientSecret}
+        redirectUri={redirectUri}
+        setRedirectUri={setRedirectUri}
         isLoading={isSavingApiKeys}
         error={apiKeyError}
       />
