@@ -36,6 +36,7 @@ export const JobQueueSection: React.FC<JobQueueSectionProps> = ({
     font_name: 'Arial',
     font_size: 64,
     highlight_color: '&H00FFFF&',
+    position: 'center',
   });
 
   const updateSubtitle = <K extends keyof SubtitleConfig>(key: K, value: SubtitleConfig[K]) =>
@@ -346,6 +347,21 @@ export const JobQueueSection: React.FC<JobQueueSectionProps> = ({
                     <option value="plain">Plain (no highlighting)</option>
                     <option value="karaoke_sentence">Karaoke (sentence-level)</option>
                     <option value="word_level">Word-level (one word)</option>
+                  </select>
+                </div>
+
+                {/* Position selector */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-[11px] text-slate-500 uppercase tracking-wider">Position</label>
+                  <select
+                    value={subtitleConfig.position}
+                    onChange={(e) => updateSubtitle('position', e.target.value as SubtitleConfig['position'])}
+                    disabled={!subtitleConfig.enabled}
+                    className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:ring-2 focus:ring-violet-500 disabled:opacity-40"
+                  >
+                    <option value="center">Center</option>
+                    <option value="bottom_center">Bottom Center</option>
+                    <option value="bottom_center_up">Bottom Center Up</option>
                   </select>
                 </div>
 

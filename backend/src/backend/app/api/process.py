@@ -21,6 +21,7 @@ class SubtitleConfig(BaseModel):
     font_name:       Font family name understood by libass/FFmpeg.
     font_size:       Font size in ASS units (roughly points at 1080p).
     highlight_color: ASS colour string, e.g. "&H00FFFF&" (yellow-cyan).
+    position:        Subtitle placement ("center", "bottom_center", "bottom_center_up").
     """
 
     enabled: bool = True
@@ -28,6 +29,7 @@ class SubtitleConfig(BaseModel):
     font_name: str = "Arial"
     font_size: int = 64
     highlight_color: str = "&H00FFFF&"
+    position: str = "center"
 
 
 class ProcessRequest(BaseModel):

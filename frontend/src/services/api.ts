@@ -240,6 +240,7 @@ export interface SubtitleConfig {
   font_name: string;
   font_size: number;
   highlight_color: string;
+  position: 'center' | 'bottom_center' | 'bottom_center_up';
 }
 
 export interface ProcessResponse {

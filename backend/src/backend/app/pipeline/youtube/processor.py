@@ -74,12 +74,29 @@ def escape_subtitle_path(path):
     return path
 
 
+def get_ass_position_tag(position: str = "center") -> str:
+    """
+    Map subtitle position name to ASS alignment/position tag.
+
+    center:           {\an5}                 (Middle of 1080x1920 canvas)
+    bottom_center:    {\an2}                 (Standard bottom-center)
+    bottom_center_up: {\an2\pos(540,1600)}   (Bottom-center moved slightly upward into 4:5 area)
+    """
+    position_map = {
+        "center": r"{\an5}",
+        "bottom_center": r"{\an2}",
+        "bottom_center_up": r"{\an2\pos(540,1600)}",
+    }
+    return position_map.get(position, r"{\an5}")
+
+
 def generate_ass_plain(
     words,
     output_file,
     font_name="Arial",
     font_size=64,
-    highlight_color="&H00FFFF&"  # accepted but unused; kept for uniform call signature
+    highlight_color="&H00FFFF&",  # accepted but unused; kept for uniform call signature
+    subtitle_position="center"
 ):
     """
     Generate plain ASS subtitles: words are grouped into short lines
@@ -168,6 +185,8 @@ def generate_ass_plain(
             "MarginL, MarginR, MarginV, Effect, Text\n"
         )
 
+        pos_tag = get_ass_position_tag(subtitle_position)
+
         for line_words in lines:
 
             if not line_words:
@@ -185,7 +204,7 @@ def generate_ass_plain(
                 f"{seconds_to_ass_time(start)},"
                 f"{seconds_to_ass_time(end)},"
                 "Default,,0,0,0,,"
-                f"{{\\an5}}{subtitle_text}\n"
+                f"{pos_tag}{subtitle_text}\n"
             )
 
 
@@ -194,7 +213,8 @@ def generate_ass_karaoke_sentence(
     output_file,
     highlight_color="&H00FFFF&",
     font_name="Arial",
-    font_size=64
+    font_size=64,
+    subtitle_position="center"
 ):
     MAX_WORDS = 6
     MAX_DURATION = 3.0
@@ -271,6 +291,8 @@ def generate_ass_karaoke_sentence(
             "MarginL, MarginR, MarginV, Effect, Text\n"
         )
 
+        pos_tag = get_ass_position_tag(subtitle_position)
+
         for line_words in lines:
             if not line_words:
                 continue
@@ -301,7 +323,7 @@ def generate_ass_karaoke_sentence(
                     f"{seconds_to_ass_time(active_word['start'])},"
                     f"{seconds_to_ass_time(active_word['end'])},"
                     "Default,,0,0,0,,"
-                    f"{{\\an5}}{subtitle_text}\n"
+                    f"{pos_tag}{subtitle_text}\n"
                 )
 
 
@@ -310,7 +332,8 @@ def generate_ass_word_level(
     output_file,
     highlight_color="&H00FFFF&",
     font_name="Arial",
-    font_size=64
+    font_size=64,
+    subtitle_position="center"
 ):
     with open(output_file, "w", encoding="utf-8") as f:
         f.write(
@@ -348,6 +371,8 @@ def generate_ass_word_level(
             "MarginL, MarginR, MarginV, Effect, Text\n"
         )
 
+        pos_tag = get_ass_position_tag(subtitle_position)
+
         for word in words:
             if "start" not in word or "end" not in word:
                 continue
@@ -361,7 +386,7 @@ def generate_ass_word_level(
             end = seconds_to_ass_time(float(word["end"]))
 
             subtitle_text = (
-                f"{{\\an5}}{{\\c{highlight_color}}}"
+                f"{pos_tag}{{\\c{highlight_color}}}"
                 f"{escape_ass_text(text)}"
                 f"{{\\c&HFFFFFF&}}"
             )
@@ -381,7 +406,8 @@ def generate_ass_karaoke_sentence(
     highlight_color="&H00FFFF&",
     normal_color="&HFFFFFF&",
     font_name="Arial",
-    font_size=64
+    font_size=64,
+    subtitle_position="center"
 ):
     """
     Generate ASS subtitles with sentence-level karaoke highlighting.
@@ -474,6 +500,8 @@ def generate_ass_karaoke_sentence(
             "MarginL, MarginR, MarginV, Effect, Text\n"
         )
 
+        pos_tag = get_ass_position_tag(subtitle_position)
+
         for line_words in lines:
 
             if not line_words:
@@ -510,7 +538,7 @@ def generate_ass_karaoke_sentence(
                 f"{seconds_to_ass_time(start)},"
                 f"{seconds_to_ass_time(end)},"
                 "Default,,0,0,0,,"
-                f"{{\\an5}}{subtitle_text}\n"
+                f"{pos_tag}{subtitle_text}\n"
             )
             
 
@@ -835,6 +863,7 @@ def generateClips(
             sub_font = "Arial"
             sub_size = 64
             sub_color = "&H00FFFF&"
+            sub_position = "center"
 
             if subtitle_config is not None:
                 subtitles_enabled = subtitle_config.enabled
@@ -842,6 +871,7 @@ def generateClips(
                 sub_font = subtitle_config.font_name
                 sub_size = subtitle_config.font_size
                 sub_color = subtitle_config.highlight_color
+                sub_position = getattr(subtitle_config, 'position', 'center')
 
             if not subtitles_enabled:
                 # Burn no subtitles; write an empty ASS file so
@@ -860,7 +890,8 @@ def generateClips(
                     temp_ass,
                     highlight_color=sub_color,
                     font_name=sub_font,
-                    font_size=sub_size
+                    font_size=sub_size,
+                    subtitle_position=sub_position
                 )
             elif sub_style == "karaoke_sentence":
                 generate_ass_karaoke_sentence(
@@ -868,7 +899,8 @@ def generateClips(
                     temp_ass,
                     highlight_color=sub_color,
                     font_name=sub_font,
-                    font_size=sub_size
+                    font_size=sub_size,
+                    subtitle_position=sub_position
                 )
             else:
                 # Default: "plain" (grouped lines, no highlighting)
@@ -877,7 +909,8 @@ def generateClips(
                     words,
                     temp_ass,
                     font_name=sub_font,
-                    font_size=sub_size
+                    font_size=sub_size,
+                    subtitle_position=sub_position
                 )
 
             # -------------------------------------------------
