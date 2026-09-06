@@ -30,17 +30,42 @@ export const JobQueueSection: React.FC<JobQueueSectionProps> = ({
 
   // Subtitle configuration state
   const [showSubtitleSettings, setShowSubtitleSettings] = useState<boolean>(false);
-  const [subtitleConfig, setSubtitleConfig] = useState<SubtitleConfig>({
-    enabled: true,
-    style: 'plain',
-    font_name: 'Arial',
-    font_size: 64,
-    highlight_color: '&H00FFFF&',
-    position: 'center',
+  const [subtitleSavedMessage, setSubtitleSavedMessage] = useState<string | null>(null);
+  const [subtitleConfig, setSubtitleConfig] = useState<SubtitleConfig>(() => {
+    try {
+      const saved = localStorage.getItem('slop_factory_subtitle_config');
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch (e) {
+      console.error('Failed to load subtitle config from localStorage', e);
+    }
+    return {
+      enabled: true,
+      style: 'plain',
+      font_name: 'Arial',
+      font_size: 64,
+      highlight_color: '&H00FFFF&',
+      position: 'center',
+    };
   });
 
   const updateSubtitle = <K extends keyof SubtitleConfig>(key: K, value: SubtitleConfig[K]) =>
     setSubtitleConfig((prev) => ({ ...prev, [key]: value }));
+
+  const handleSaveSubtitleSettings = () => {
+    try {
+      localStorage.setItem('slop_factory_subtitle_config', JSON.stringify(subtitleConfig));
+      const count = selectedIds.length;
+      setSubtitleSavedMessage(
+        `Subtitle settings saved! Applied to ${count} selected video${count === 1 ? '' : 's'}.`
+      );
+    } catch (e) {
+      console.error('Failed to save subtitle config to localStorage', e);
+      setSubtitleSavedMessage('Failed to save subtitle settings.');
+    }
+    setTimeout(() => setSubtitleSavedMessage(null), 4500);
+  };
 
   // Exclude archived and processed videos from job queue (processed videos move to Processed section)
   const queueJobs = jobs.filter(
@@ -418,6 +443,56 @@ export const JobQueueSection: React.FC<JobQueueSectionProps> = ({
                     <span className="text-[10px] text-slate-600">ASS format: &HBBGGRR& (e.g. &H00FFFF& = yellow)</span>
                   </div>
                 )}
+
+                {/* Save Settings & Confirmation Actions */}
+                <div className="col-span-full pt-2 flex flex-wrap items-center justify-between gap-3 border-t border-indigo-800/40 mt-1">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleSaveSubtitleSettings}
+                      className="px-3.5 py-2 text-xs font-semibold text-white bg-violet-600 hover:bg-violet-500 active:bg-violet-700 rounded-xl shadow-md shadow-violet-600/30 transition-all flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                      <span>Save Settings for Selected ({selectedIds.length})</span>
+                    </button>
+                    
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const defaults: SubtitleConfig = {
+                          enabled: true,
+                          style: 'plain',
+                          font_name: 'Arial',
+                          font_size: 64,
+                          highlight_color: '&H00FFFF&',
+                          position: 'center',
+                        };
+                        setSubtitleConfig(defaults);
+                        try {
+                          localStorage.setItem('slop_factory_subtitle_config', JSON.stringify(defaults));
+                          setSubtitleSavedMessage('Reset to default subtitle settings.');
+                          setTimeout(() => setSubtitleSavedMessage(null), 3000);
+                        } catch (e) {
+                          console.error(e);
+                        }
+                      }}
+                      className="px-3 py-2 text-xs font-medium text-slate-400 hover:text-slate-200 bg-slate-900 hover:bg-slate-800 border border-slate-700 rounded-xl transition-colors cursor-pointer"
+                    >
+                      Reset Defaults
+                    </button>
+                  </div>
+
+                  {subtitleSavedMessage && (
+                    <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-emerald-950/80 border border-emerald-500/50 text-emerald-300 text-xs font-semibold shadow-lg shadow-emerald-950/50 animate-fadeIn">
+                      <svg className="w-4 h-4 text-emerald-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <span>{subtitleSavedMessage}</span>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )}
