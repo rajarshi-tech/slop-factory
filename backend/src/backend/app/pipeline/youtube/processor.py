@@ -27,6 +27,25 @@ def run_command(command):
         raise RuntimeError("FFmpeg command failed")
 
 
+def extract_audio(video_file, start, duration, output_audio):
+    """
+    Extract an audio segment from video_file as WAV format for WhisperX.
+    """
+    command = [
+        "ffmpeg",
+        "-y",
+        "-ss", str(start),
+        "-i", str(video_file),
+        "-t", str(duration),
+        "-vn",
+        "-acodec", "pcm_s16le",
+        "-ar", "16000",
+        "-ac", "1",
+        str(output_audio)
+    ]
+    run_command(command)
+
+
 def seconds_to_ass_time(seconds):
     """
     Convert seconds to ASS timestamp format:
@@ -75,7 +94,7 @@ def escape_subtitle_path(path):
 
 
 def get_ass_position_tag(position: str = "center") -> str:
-    """
+    r"""
     Map subtitle position name to ASS alignment/position tag.
 
     center:           {\an5}                 (Middle of 1080x1920 canvas)

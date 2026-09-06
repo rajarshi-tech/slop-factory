@@ -21,7 +21,7 @@ CHUNK_OVERLAP = 25
 MAX_CANDIDATES_PER_CHUNK = 8
 
 # Final output
-MAX_FINAL_CLIPS = 10
+MAX_FINAL_CLIPS = 20
 
 # Clip duration
 MIN_CLIP_LENGTH = 15
@@ -30,7 +30,7 @@ PREFERRED_MAX_LENGTH = 90
 MAX_CLIP_LENGTH = 120
 
 # Minimum score required for a clip to survive final filtering
-MIN_SCORE = 70
+MIN_SCORE = 60
 
 
 # ============================================================
@@ -344,29 +344,30 @@ def create_candidate_prompt(chunk):
 You are an expert short-form video editor.
 
 You are analyzing part of a long-form video and looking for moments
-that could become strong YouTube Shorts, TikToks, or Instagram Reels.
+that could become YouTube Shorts, TikToks, or Instagram Reels.
 
-Your job in this step is CANDIDATE DISCOVERY.
+Your job in this step is CANDIDATE DISCOVERY with HIGH RECALL.
 
-Do NOT try to make the final editorial decision yet.
-
-Find moments that have clear potential to become engaging short-form
-videos.
+Do NOT try to make final quality or editorial decisions yet.
+Find ANY potentially interesting, engaging, funny, or noteworthy moments.
+Do not restrict yourself to only obvious viral hits or exceptionally strong clips.
+If a moment has any reasonable spark of viewer interest or curiosity, include it.
+Let Pass 2 evaluate and decide final quality.
 
 ## WHAT TO LOOK FOR
 
-Prioritize moments containing things such as:
+Look for any moments containing elements such as:
 
 - surprising revelations
 - unusual facts
-- strong opinions
+- strong or interesting opinions
 - controversial opinions
-- funny moments
+- funny moments or jokes
 - emotional moments
-- compelling stories
+- compelling stories or personal experiences
 - conflict or disagreement
 - unexpected outcomes
-- useful insights
+- useful insights or tips
 - counterintuitive ideas
 - impressive achievements
 - failures or mistakes
@@ -378,19 +379,13 @@ Prioritize moments containing things such as:
 - stories with a payoff
 - moments where something unexpected happens
 
-Think like a professional Shorts editor.
-
 Ask yourself:
-
-"Would a viewer scrolling through Shorts have a reason to stop
-and listen to this?"
+"Could a viewer find this moment interesting or engaging?"
 
 ## HOOKS
 
-Strong candidates often contain a natural hook.
-
+Candidates often contain a natural hook or interesting opening statement.
 Examples:
-
 - "I lost $2 million because of this."
 - "Nobody tells you this about..."
 - "I thought it was impossible until..."
@@ -400,79 +395,48 @@ Examples:
 - "Here's what actually happened..."
 
 DO NOT invent a hook.
-
 The hook must naturally exist in what the speaker actually says.
-
-The clip can begin before the strongest statement if some context is
-necessary.
+The clip can begin before the strongest statement if some context is helpful.
 
 ## CLIP LENGTH
 
 Prefer approximately 25-90 seconds.
-
-15-25 seconds is acceptable when the moment is exceptionally strong.
-
+15-25 seconds is acceptable for quick punchy moments.
 90-120 seconds is acceptable when the story genuinely requires it.
-
 Do not artificially extend clips.
-
-Do not reject a good moment simply because it is shorter than ideal.
+Do not reject a candidate simply because it is shorter or longer than ideal.
 
 ## STANDALONE CONTENT
 
-The eventual clip should ideally make sense to somebody who has never
-seen the original video.
-
-Avoid moments that obviously depend on a large amount of missing context.
-
-However, do NOT reject a candidate just because it needs a small amount
-of setup.
-
-The next editorial pass will inspect surrounding transcript context.
+The clip should ideally make sense to somebody who has never seen the original video.
+Avoid moments that depend on an overwhelming amount of missing context.
+However, do NOT reject a candidate just because it needs a small amount of setup.
+The next editorial pass (Pass 2) will inspect surrounding transcript context and refine boundaries.
 
 ## AVOID
 
 Do not prioritize:
+- greetings / generic channel welcomes
+- standard introductions
+- sponsor messages / advertisements
+- housekeeping / subscribe reminders
+- filler / meaningless rambling
 
-- greetings
-- introductions
-- sponsor messages
-- advertisements
-- housekeeping
-- generic motivational statements
-- filler
-- repeated information
-- rambling
-- boring setup
-- extremely context-dependent statements
-
-## IMPORTANT
-
-Do not assume that every complete idea is a good clip.
-
-"Complete" is necessary but NOT sufficient.
-
-We care about viewer interest.
-
-At the same time, do not be excessively conservative.
+## IMPORTANT: HIGH RECALL
 
 This is candidate discovery.
-
-If something has clear potential, include it and let the second
-editorial pass decide.
+Aim for high recall: when in doubt, include the candidate!
+Do NOT filter aggressively at this stage.
+Let the second editorial pass (Pass 2) decide final quality and editorial suitability.
 
 Return up to {MAX_CANDIDATES_PER_CHUNK} candidates.
-
-If there is genuinely nothing interesting, return [].
+If there is genuinely nothing interesting in this chunk, return [].
 
 ## TIMESTAMPS
 
 Use timestamps from the transcript.
-
 Do not invent timestamps.
-
 The start and end should roughly surround the interesting moment.
-
 Do not intentionally cut through a sentence.
 
 ## OUTPUT
@@ -695,15 +659,9 @@ def deduplicate_candidates(candidates):
                 and overlap / shorter_duration > 0.6
             )
 
-            semantic_duplicate = _topics_are_similar(
-                candidate.get("topic", ""),
-                existing.get("topic", "")
-            )
-
-            # Keep the original strong temporal rule, but also catch
-            # candidates that describe essentially the same editorial topic
-            # even when their timestamps do not overlap much.
-            if temporal_duplicate or semantic_duplicate:
+            # Only remove candidates with high timestamp overlap.
+            # Semantic deduplication is reserved for the final clips pass.
+            if temporal_duplicate:
                 duplicate = True
                 break
 
@@ -755,147 +713,80 @@ def create_editor_prompt(
     return f"""
 You are the final editor for a short-form video clipping system.
 
-Another AI found the candidate below.
+Another AI found the candidate below during candidate discovery.
 
-Your job is to determine whether this is a GOOD short-form video,
-and if it is, improve its timestamps.
+Your job is to determine whether this moment is publishable as a short-form video,
+and if so, improve its start and end timestamps.
 
-Do NOT demand that the clip be perfect or guaranteed viral.
+## EDITORIAL PHILOSOPHY: LESS CONSERVATIVE SELECTION
 
-Your goal is to find the strongest publishable moments.
-
-A good clip should have clear viewer appeal.
+- Be open-minded and less conservative.
+- Prefer selecting reasonably interesting clips when uncertain.
+- Do NOT demand that the clip be extraordinary, flawless, or guaranteed viral.
+- Allow small context gaps if the core idea or story is still enjoyable and understandable.
+- Reject ONLY clearly weak clips (e.g. pure filler, incoherent rambling, no payoff, or completely incomprehensible without outside knowledge).
 
 ## EVALUATION
 
 Consider:
 
-1. Hook strength
-2. Curiosity
-3. Entertainment
-4. Emotional impact
-5. Interestingness
-6. Information/value
-7. Storytelling
-8. Payoff
-9. Standalone context
-10. Natural beginning and ending
+1. Hook strength & opening interest
+2. Curiosity & engagement
+3. Entertainment or humor
+4. Emotional impact or relatability
+5. Interestingness / useful insights
+6. Storytelling & payoff
+7. Standalone context (small context gaps are acceptable)
+8. Natural beginning and ending
 
 Not every category needs to be strong.
-
-A clip can be good because it is funny.
-Another can be good because it is surprising.
-Another can be good because it tells a compelling story.
+A clip can be selected because it is funny, because it is surprising, or because it shares an interesting viewpoint or story.
 
 ## HOOK
 
-The beginning is extremely important.
-
-Prefer starting with:
-
-- a surprising statement
-- a bold claim
-- an unusual fact
-- a provocative opinion
-- an emotional statement
-- an interesting story beginning
-- a statement that creates curiosity
-
+The beginning is important. Prefer starting where the interesting thought or story naturally begins.
 Avoid starting with unnecessary:
-
-- greetings
+- greetings / generic welcomes
 - introductions
-- filler
-- generic setup
+- filler / meaningless setup
 - repeated information
 
-You MAY move the start timestamp.
-
-If the candidate starts too early, remove boring setup.
-
-If it starts too late, include the preceding context needed to
-understand the hook.
-
-Do not remove necessary setup merely to make the first sentence
-sound more dramatic.
+You MAY move the start timestamp earlier or later to capture a clean, natural opening.
+If it starts too late, include the preceding context needed to understand the hook.
 
 ## PAYOFF
 
-The clip should reach the interesting conclusion.
-
-Do not end immediately after the hook.
-
-Keep enough material to deliver the payoff.
-
-You MAY move the end timestamp.
-
-End after:
-
-- the answer
-- the punchline
-- the revelation
-- the conclusion
-- the important statement
-- the natural end of the story
-
-Do not include unnecessary material after the payoff.
+The clip should reach the interesting conclusion or payoff.
+Do not end immediately after the hook. Keep enough material to deliver the payoff.
+You MAY move the end timestamp to ensure a natural finish.
+End after the punchline, conclusion, answer, or natural end of the story.
 
 ## CONTEXT
 
-A viewer should be able to understand the clip without watching
-the original video.
-
-Reject the clip if understanding it requires a large amount of
-missing conversation.
-
-Small amounts of context are acceptable.
+A viewer should be able to understand the clip without watching the original video.
+Small context gaps or brief references to prior context are acceptable.
+Only reject if understanding the clip requires an overwhelming amount of missing conversation.
 
 ## LENGTH
 
 Preferred: 25-90 seconds.
-
-15-25 seconds is acceptable for a very strong moment.
-
+15-25 seconds is acceptable for a quick, punchy moment.
 90-120 seconds is acceptable for a compelling story or explanation.
-
 Do not add filler just to reach a target length.
-
 Do not shorten a good story just because it exceeds 90 seconds.
 
-## IMPORTANT
-
-Do NOT reject a clip merely because it is not extraordinary.
-
-Select it if it has clear short-form potential.
-
-Reject it when there is a concrete problem such as:
-
-- mostly filler
-- no interesting point
-- incomplete thought
-- no payoff
-- extremely weak opening
-- impossible to understand without missing context
-- repetitive or redundant content
-
-When uncertain, prefer selecting a reasonably interesting candidate.
-
-## SCORE
-
-Give the candidate a score from 0-100.
+## SCORING (0-100)
 
 90-100 = exceptional
 80-89 = very strong
-70-79 = good and publishable
-60-69 = mediocre
-50-59 = weak
-below 50 = poor
+70-79 = good and engaging
+60-69 = reasonably interesting / publishable
+50-59 = weak / marginal
+below 50 = poor / clearly unpublishable
 
-The score should represent realistic short-form potential,
-NOT how important the information is.
-
-A boring educational explanation should not receive a high score
-just because the information is useful.
+Score 60 and above is considered PUBLISHABLE (selected: true).
+When uncertain, prefer selecting the clip with a score >= 60.
+Reject (selected: false) ONLY if the clip is clearly weak (score < 60).
 
 ## CANDIDATE
 
@@ -914,26 +805,26 @@ Topic:
 
 ## OUTPUT
 
-If the candidate is good enough to publish:
+If the candidate is publishable (score >= 60):
 
 {{
     "selected": true,
     "start": 123.45,
     "end": 178.90,
-    "score": 82,
+    "score": 72,
     "title": "Why he walked away from a $300K salary",
-    "reason": "The clip opens with a strong personal revelation, gives enough context to understand the decision, and ends with a clear payoff."
+    "reason": "Strong opening hook, clear explanation with minimal context needed, and ends with a good payoff."
 }}
 
-If the candidate is weak:
+If the candidate is clearly weak (score < 60):
 
 {{
     "selected": false,
     "start": 0,
     "end": 0,
-    "score": 40,
+    "score": 45,
     "title": "",
-    "reason": "The moment is informative but lacks enough viewer curiosity or payoff."
+    "reason": "Rambling filler with no clear hook or payoff."
 }}
 
 Return ONLY valid JSON.
@@ -996,53 +887,55 @@ def refine_candidate(
         response_schema=create_editor_schema(),
     )
 
-
     try:
 
         result = json.loads(output)
 
         if not isinstance(result, dict):
-            return None
+            return None, {"score": 0, "reason": "Invalid response structure from LLM"}
 
-        if not result.get("selected", False):
-            return None
+        score = float(result.get("score", 0))
+        reason = result.get("reason", "No reason provided")
+        selected = bool(result.get("selected", False))
 
-        start = float(result["start"])
-        end = float(result["end"])
-        score = float(result["score"])
+        if not selected:
+            return None, {"score": score, "reason": reason}
+
+        start = float(result.get("start", 0))
+        end = float(result.get("end", 0))
 
         duration = end - start
 
         if duration < MIN_CLIP_LENGTH:
-            return None
+            return None, {"score": score, "reason": f"Duration ({duration:.1f}s) shorter than MIN_CLIP_LENGTH ({MIN_CLIP_LENGTH}s)"}
 
         if duration > MAX_CLIP_LENGTH:
-            return None
+            return None, {"score": score, "reason": f"Duration ({duration:.1f}s) longer than MAX_CLIP_LENGTH ({MAX_CLIP_LENGTH}s)"}
 
         if score < MIN_SCORE:
-            return None
+            return None, {"score": score, "reason": f"Score ({score:.0f}) below MIN_SCORE ({MIN_SCORE}) - {reason}"}
 
         return {
             "start": start,
             "end": end,
             "score": score,
-            "title": result["title"],
+            "title": result.get("title", ""),
             "topic": candidate.get("topic", ""),
             "hook": candidate.get("hook", ""),
-            "reason": result["reason"]
-        }
+            "reason": reason
+        }, None
 
     except (
         json.JSONDecodeError,
         KeyError,
         TypeError,
         ValueError
-    ):
+    ) as e:
 
         print("Failed to parse editor response.")
         print(output)
 
-        return None
+        return None, {"score": 0, "reason": f"Parse error: {str(e)}"}
 
 
 # ============================================================
@@ -1273,38 +1166,40 @@ def generateTimestamps(id):
             candidates
         )
 
+    raw_candidates_count = len(all_candidates)
     print(
         f"\nRaw candidates: "
-        f"{len(all_candidates)}"
+        f"{raw_candidates_count}"
     )
 
     # --------------------------------------------------------
     # DEDUPLICATE CANDIDATES
     # --------------------------------------------------------
 
-    all_candidates = deduplicate_candidates(
+    unique_candidates = deduplicate_candidates(
         all_candidates
     )
 
+    unique_candidates_count = len(unique_candidates)
     print(
         f"Unique candidates: "
-        f"{len(all_candidates)}"
+        f"{unique_candidates_count}"
     )
 
     # --------------------------------------------------------
     # PASS 2
     # --------------------------------------------------------
 
-    final_clips = []
+    selected_clips = []
 
     for index, candidate in enumerate(
-        all_candidates
+        unique_candidates
     ):
 
         print(
             f"\n[PASS 2] "
             f"Candidate {index + 1}/"
-            f"{len(all_candidates)}"
+            f"{len(unique_candidates)}"
         )
 
         print(
@@ -1313,16 +1208,18 @@ def generateTimestamps(id):
             f"{candidate['end']:.2f}"
         )
 
-        clip = refine_candidate(
+        clip, reject_info = refine_candidate(
             candidate,
             transcript,
             llm
         )
 
         if clip is None:
-
-            print("  REJECTED")
-
+            score_val = reject_info.get("score", 0) if reject_info else 0
+            reason_text = reject_info.get("reason", "No reason provided") if reject_info else "No reason provided"
+            print(
+                f"  REJECTED | score={score_val:.0f} | reason: {reason_text}"
+            )
             continue
 
         # Snap to actual subtitle boundaries
@@ -1337,31 +1234,26 @@ def generateTimestamps(id):
         )
 
         if duration < MIN_CLIP_LENGTH:
-
             print(
-                "  REJECTED: too short after "
-                "boundary adjustment"
+                f"  REJECTED | score={clip['score']:.0f} | reason: duration ({duration:.1f}s) too short after boundary adjustment"
             )
-
             continue
 
         if duration > MAX_CLIP_LENGTH:
-
             print(
-                "  REJECTED: too long after "
-                "boundary adjustment"
+                f"  REJECTED | score={clip['score']:.0f} | reason: duration ({duration:.1f}s) too long after boundary adjustment"
             )
-
             continue
 
-        final_clips.append(
+        selected_clips.append(
             clip
         )
 
         print(
             f"  SELECTED "
             f"| score={clip['score']:.0f} "
-            f"| duration={duration:.1f}s"
+            f"| duration={duration:.1f}s "
+            f"| title: {clip['title']}"
         )
 
     # --------------------------------------------------------
@@ -1369,7 +1261,7 @@ def generateTimestamps(id):
     # --------------------------------------------------------
 
     final_clips = deduplicate_final_clips(
-        final_clips
+        selected_clips
     )
 
     # --------------------------------------------------------
@@ -1386,17 +1278,18 @@ def generateTimestamps(id):
     ]
 
     # --------------------------------------------------------
-    # PRINT FINAL RESULTS
+    # STAGE COUNTS & FINAL RESULTS
     # --------------------------------------------------------
 
     print(
         f"\n========================================"
     )
-
     print(
-        f"FINAL CLIPS: {len(final_clips)}"
+        f"Stage counts: {raw_candidates_count} raw candidates → "
+        f"{unique_candidates_count} unique candidates → "
+        f"{len(selected_clips)} selected clips → "
+        f"{len(final_clips)} final clips"
     )
-
     print(
         f"========================================"
     )
