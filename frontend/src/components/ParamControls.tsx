@@ -146,6 +146,34 @@ const ParamControls = ({ onParamsChange, onParamsSave, defaultParams }: ParamCon
           />
         </div>
 
+        {/* Uploaded After */}
+        <div>
+          <label className="block text-slate-400 font-semibold mb-1.5 uppercase tracking-wider">Uploaded After</label>
+          <input
+            type="date"
+            value={params.publishedAfter ? params.publishedAfter.split('T')[0] : ''}
+            onChange={(e) => {
+              const val = e.target.value;
+              handleParamChange('publishedAfter', val ? `${val}T00:00:00Z` : null);
+            }}
+            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 [color-scheme:dark]"
+          />
+        </div>
+
+        {/* Uploaded Before */}
+        <div>
+          <label className="block text-slate-400 font-semibold mb-1.5 uppercase tracking-wider">Uploaded Before</label>
+          <input
+            type="date"
+            value={params.publishedBefore ? params.publishedBefore.split('T')[0] : ''}
+            onChange={(e) => {
+              const val = e.target.value;
+              handleParamChange('publishedBefore', val ? `${val}T23:59:59Z` : null);
+            }}
+            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 [color-scheme:dark]"
+          />
+        </div>
+
         {/* Video Duration */}
         <div>
           <label className="block text-slate-400 font-semibold mb-1.5 uppercase tracking-wider">Video Duration</label>

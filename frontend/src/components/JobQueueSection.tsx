@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { getJobById, archiveJobs, processVideos } from '../services/api';
-import type { Job } from '../services/api';
+import type { Job, SubtitleConfig } from '../services/api';
 
 interface JobQueueSectionProps {
   jobs: Job[];
@@ -27,6 +27,19 @@ export const JobQueueSection: React.FC<JobQueueSectionProps> = ({
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [processMessage, setProcessMessage] = useState<string | null>(null);
+
+  // Subtitle configuration state
+  const [showSubtitleSettings, setShowSubtitleSettings] = useState<boolean>(false);
+  const [subtitleConfig, setSubtitleConfig] = useState<SubtitleConfig>({
+    enabled: true,
+    style: 'plain',
+    font_name: 'Arial',
+    font_size: 64,
+    highlight_color: '&H00FFFF&',
+  });
+
+  const updateSubtitle = <K extends keyof SubtitleConfig>(key: K, value: SubtitleConfig[K]) =>
+    setSubtitleConfig((prev) => ({ ...prev, [key]: value }));
 
   // Exclude archived and processed videos from job queue (processed videos move to Processed section)
   const queueJobs = jobs.filter(
@@ -68,7 +81,7 @@ export const JobQueueSection: React.FC<JobQueueSectionProps> = ({
     try {
       setIsProcessing(true);
       setProcessMessage(`Processing ${selectedIds.length} video(s)...`);
-      await processVideos(selectedIds);
+      await processVideos(selectedIds, subtitleConfig);
       setProcessMessage(`Processing completed! Videos moved to Processed section.`);
       setSelectedIds([]);
       onRefresh();
@@ -235,48 +248,163 @@ export const JobQueueSection: React.FC<JobQueueSectionProps> = ({
 
       {/* Batch Selection Action Bar */}
       {selectedIds.length > 0 && (
-        <div className="bg-indigo-950/80 border border-indigo-800/80 rounded-2xl p-4 backdrop-blur-xl shadow-xl flex flex-wrap items-center justify-between gap-4 animate-fadeIn">
-          <div className="flex items-center gap-3">
-            <span className="px-3 py-1 rounded-full bg-indigo-500/20 text-indigo-300 text-xs font-bold border border-indigo-500/30">
-              {selectedIds.length} selected
-            </span>
-            <button
-              onClick={() => setSelectedIds([])}
-              className="text-xs text-slate-400 hover:text-white transition-colors"
-            >
-              Deselect all
-            </button>
+        <div className="bg-indigo-950/80 border border-indigo-800/80 rounded-2xl p-4 backdrop-blur-xl shadow-xl flex flex-col gap-4 animate-fadeIn">
+          {/* Top row: count + archive + process */}
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <span className="px-3 py-1 rounded-full bg-indigo-500/20 text-indigo-300 text-xs font-bold border border-indigo-500/30">
+                {selectedIds.length} selected
+              </span>
+              <button
+                onClick={() => setSelectedIds([])}
+                className="text-xs text-slate-400 hover:text-white transition-colors"
+              >
+                Deselect all
+              </button>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleArchiveSelected}
+                className="px-3 py-2 text-xs font-medium text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 rounded-xl border border-amber-500/30 transition-colors"
+              >
+                Archive Selected ({selectedIds.length})
+              </button>
+
+              {/* Subtitle settings toggle */}
+              <button
+                onClick={() => setShowSubtitleSettings((v) => !v)}
+                className={`px-3 py-2 text-xs font-medium rounded-xl border transition-colors flex items-center gap-1.5 ${
+                  showSubtitleSettings
+                    ? 'text-violet-200 bg-violet-500/20 border-violet-500/40'
+                    : 'text-slate-300 bg-slate-800/60 border-slate-700 hover:bg-slate-700'
+                }`}
+                title="Configure subtitle options"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
+                </svg>
+                Subtitles
+                {showSubtitleSettings ? ' ▲' : ' ▼'}
+              </button>
+
+              <button
+                onClick={handleProcessSelected}
+                disabled={isProcessing}
+                className="px-4 py-2 text-xs font-bold text-white bg-linear-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 rounded-xl shadow-lg shadow-indigo-600/30 transition-all flex items-center gap-2 disabled:opacity-50"
+              >
+                {isProcessing ? (
+                  <>
+                    <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>Processing...</span>
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span>Process Selected Videos ({selectedIds.length})</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            <button
-              onClick={handleArchiveSelected}
-              className="px-3 py-2 text-xs font-medium text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 rounded-xl border border-amber-500/30 transition-colors"
-            >
-              Archive Selected ({selectedIds.length})
-            </button>
+          {/* Subtitle settings panel (collapsible) */}
+          {showSubtitleSettings && (
+            <div className="border-t border-indigo-800/60 pt-4">
+              <p className="text-[11px] font-bold text-violet-300 uppercase tracking-wider mb-3">Subtitle Settings</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
 
-            <button
-              onClick={handleProcessSelected}
-              disabled={isProcessing}
-              className="px-4 py-2 text-xs font-bold text-white bg-linear-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 rounded-xl shadow-lg shadow-indigo-600/30 transition-all flex items-center gap-2 disabled:opacity-50"
-            >
-              {isProcessing ? (
-                <>
-                  <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  <span>Processing...</span>
-                </>
-              ) : (
-                <>
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <span>Process Selected Videos ({selectedIds.length})</span>
-                </>
-              )}
-            </button>
-          </div>
+                {/* Enabled toggle */}
+                <label className="flex items-center justify-between gap-3 bg-slate-900/60 border border-slate-800 rounded-xl px-3 py-2.5 cursor-pointer col-span-full sm:col-span-1">
+                  <span className="text-xs text-slate-300 font-medium">Subtitles Enabled</span>
+                  <div
+                    onClick={() => updateSubtitle('enabled', !subtitleConfig.enabled)}
+                    className={`relative w-9 h-5 rounded-full transition-colors cursor-pointer ${
+                      subtitleConfig.enabled ? 'bg-violet-600' : 'bg-slate-700'
+                    }`}
+                  >
+                    <span
+                      className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${
+                        subtitleConfig.enabled ? 'translate-x-4' : 'translate-x-0'
+                      }`}
+                    />
+                  </div>
+                </label>
+
+                {/* Style selector */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-[11px] text-slate-500 uppercase tracking-wider">Style</label>
+                  <select
+                    value={subtitleConfig.style}
+                    onChange={(e) => updateSubtitle('style', e.target.value as SubtitleConfig['style'])}
+                    disabled={!subtitleConfig.enabled}
+                    className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:ring-2 focus:ring-violet-500 disabled:opacity-40"
+                  >
+                    <option value="plain">Plain (no highlighting)</option>
+                    <option value="karaoke_sentence">Karaoke (sentence-level)</option>
+                    <option value="word_level">Word-level (one word)</option>
+                  </select>
+                </div>
+
+                {/* Font family */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-[11px] text-slate-500 uppercase tracking-wider">Font Family</label>
+                  <input
+                    type="text"
+                    value={subtitleConfig.font_name}
+                    onChange={(e) => updateSubtitle('font_name', e.target.value)}
+                    disabled={!subtitleConfig.enabled}
+                    placeholder="Arial"
+                    className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:ring-2 focus:ring-violet-500 disabled:opacity-40 placeholder-slate-600"
+                  />
+                </div>
+
+                {/* Font size */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-[11px] text-slate-500 uppercase tracking-wider">Font Size</label>
+                  <input
+                    type="number"
+                    value={subtitleConfig.font_size}
+                    onChange={(e) => updateSubtitle('font_size', parseInt(e.target.value, 10) || 64)}
+                    disabled={!subtitleConfig.enabled}
+                    min={12}
+                    max={200}
+                    className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:ring-2 focus:ring-violet-500 disabled:opacity-40"
+                  />
+                </div>
+
+                {/* Highlight color — not applicable for plain style */}
+                {subtitleConfig.style !== 'plain' && (
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[11px] text-slate-500 uppercase tracking-wider">Highlight Color</label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={subtitleConfig.highlight_color}
+                        onChange={(e) => updateSubtitle('highlight_color', e.target.value)}
+                        disabled={!subtitleConfig.enabled}
+                        placeholder="&H00FFFF&"
+                        className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-200 font-mono focus:outline-none focus:ring-2 focus:ring-violet-500 disabled:opacity-40 placeholder-slate-600"
+                      />
+                      <div
+                        className="w-7 h-7 rounded-lg border border-slate-700 flex-shrink-0"
+                        title="ASS color preview is approximate"
+                        style={{
+                          backgroundColor: subtitleConfig.highlight_color
+                            .replace(/&H([0-9A-Fa-f]{6})&?/, '#$1')
+                            .replace(/^#([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})$/, (_m, bb, gg, rr) => `#${rr}${gg}${bb}`)
+                        }}
+                      />
+                    </div>
+                    <span className="text-[10px] text-slate-600">ASS format: &HBBGGRR& (e.g. &H00FFFF& = yellow)</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

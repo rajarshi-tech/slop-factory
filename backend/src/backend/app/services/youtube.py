@@ -42,14 +42,14 @@ def get_channel_credentials(channel_id: str) -> Credentials:
     return credentials
 
 
-def upload_scheduled_video(channel_id: str, file_path: str, title: str, publish_at: str) -> str:
+def upload_scheduled_video(channel_id: str, file_path: str, title: str, publish_at: str, description: str = "") -> str:
     """Upload a private video and let YouTube publish it at ``publish_at``."""
     try:
         youtube = build("youtube", "v3", credentials=get_channel_credentials(channel_id), cache_discovery=False)
         response = youtube.videos().insert(
             part="snippet,status",
             body={
-                "snippet": {"title": title, "description": ""},
+                "snippet": {"title": title, "description": description},
                 "status": {"privacyStatus": "private", "publishAt": publish_at, "selfDeclaredMadeForKids": False},
             },
             media_body=MediaFileUpload(file_path, mimetype="video/mp4", resumable=True),

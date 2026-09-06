@@ -74,12 +74,17 @@ def escape_subtitle_path(path):
     return path
 
 
-def generate_ass(words, output_file):
+def generate_ass_plain(
+    words,
+    output_file,
+    font_name="Arial",
+    font_size=64,
+    highlight_color="&H00FFFF&"  # accepted but unused; kept for uniform call signature
+):
     """
-    Generate ASS subtitles using WhisperX word-level timestamps.
-
-    WhisperX timestamps are relative to the beginning of the
-    extracted audio clip, which is exactly what we need.
+    Generate plain ASS subtitles: words are grouped into short lines
+    (up to MAX_WORDS words or MAX_DURATION seconds) and rendered as
+    solid white text with no per-word colour or karaoke timing tags.
     """
 
     MAX_WORDS = 6
@@ -134,6 +139,7 @@ def generate_ass(words, output_file):
             "PlayResY: 1920\n"
             "ScaledBorderAndShadow: yes\n"
             "\n"
+
             "[V4+ Styles]\n"
             "Format: Name, Fontname, Fontsize, "
             "PrimaryColour, SecondaryColour, "
@@ -142,7 +148,10 @@ def generate_ass(words, output_file):
             "Spacing, Angle, BorderStyle, Outline, "
             "Shadow, Alignment, MarginL, MarginR, "
             "MarginV, Encoding\n"
-            "Style: Default,Arial,64,"
+
+            f"Style: Default,"
+            f"{font_name},"
+            f"{font_size},"
             "&H00FFFFFF,"
             "&H00FFFFFF,"
             "&H00000000,"
@@ -151,7 +160,315 @@ def generate_ass(words, output_file):
             "100,100,0,0,"
             "1,4,2,5,"
             "60,60,60,1\n"
+
             "\n"
+
+            "[Events]\n"
+            "Format: Layer, Start, End, Style, Name, "
+            "MarginL, MarginR, MarginV, Effect, Text\n"
+        )
+
+        for line_words in lines:
+
+            if not line_words:
+                continue
+
+            start = line_words[0]["start"]
+            end = line_words[-1]["end"]
+
+            subtitle_text = escape_ass_text(
+                " ".join(w["text"] for w in line_words)
+            )
+
+            f.write(
+                "Dialogue: 0,"
+                f"{seconds_to_ass_time(start)},"
+                f"{seconds_to_ass_time(end)},"
+                "Default,,0,0,0,,"
+                f"{{\\an5}}{subtitle_text}\n"
+            )
+
+
+def generate_ass_karaoke_sentence(
+    words,
+    output_file,
+    highlight_color="&H00FFFF&",
+    font_name="Arial",
+    font_size=64
+):
+    MAX_WORDS = 6
+    MAX_DURATION = 3.0
+
+    lines = []
+    current_words = []
+    line_start = None
+
+    for word in words:
+        if "start" not in word or "end" not in word:
+            continue
+
+        text = word.get("word", "").strip()
+
+        if not text:
+            continue
+
+        start = float(word["start"])
+        end = float(word["end"])
+
+        if line_start is None:
+            line_start = start
+
+        current_words.append({
+            "text": text,
+            "start": start,
+            "end": end
+        })
+
+        if (
+            len(current_words) >= MAX_WORDS
+            or end - line_start >= MAX_DURATION
+        ):
+            lines.append(current_words)
+            current_words = []
+            line_start = None
+
+    if current_words:
+        lines.append(current_words)
+
+    with open(output_file, "w", encoding="utf-8") as f:
+        f.write(
+            "[Script Info]\n"
+            "ScriptType: v4.00+\n"
+            "PlayResX: 1080\n"
+            "PlayResY: 1920\n"
+            "ScaledBorderAndShadow: yes\n"
+            "\n"
+
+            "[V4+ Styles]\n"
+            "Format: Name, Fontname, Fontsize, "
+            "PrimaryColour, SecondaryColour, "
+            "OutlineColour, BackColour, Bold, Italic, "
+            "Underline, StrikeOut, ScaleX, ScaleY, "
+            "Spacing, Angle, BorderStyle, Outline, "
+            "Shadow, Alignment, MarginL, MarginR, "
+            "MarginV, Encoding\n"
+
+            f"Style: Default,"
+            f"{font_name},"
+            f"{font_size},"
+            "&H00FFFFFF,"       # Normal words = white
+            "&H00FFFFFF,"
+            "&H00000000,"       # Black outline
+            "&H80000000,"       # Black shadow
+            "-1,0,0,0,"
+            "100,100,0,0,"
+            "1,4,2,5,"
+            "60,60,60,1\n"
+
+            "\n"
+            "[Events]\n"
+            "Format: Layer, Start, End, Style, Name, "
+            "MarginL, MarginR, MarginV, Effect, Text\n"
+        )
+
+        for line_words in lines:
+            if not line_words:
+                continue
+
+            for active_index, active_word in enumerate(line_words):
+
+                subtitle_text = ""
+
+                for index, word in enumerate(line_words):
+                    text = escape_ass_text(word["text"])
+
+                    if index == active_index:
+                        # Currently spoken word
+                        subtitle_text += (
+                            f"{{\\c{highlight_color}}}"
+                            f"{text}"
+                            r"{\c&HFFFFFF&}"
+                            " "
+                        )
+                    else:
+                        # Other words
+                        subtitle_text += f"{text} "
+
+                subtitle_text = subtitle_text.strip()
+
+                f.write(
+                    "Dialogue: 0,"
+                    f"{seconds_to_ass_time(active_word['start'])},"
+                    f"{seconds_to_ass_time(active_word['end'])},"
+                    "Default,,0,0,0,,"
+                    f"{{\\an5}}{subtitle_text}\n"
+                )
+
+
+def generate_ass_word_level(
+    words,
+    output_file,
+    highlight_color="&H00FFFF&",
+    font_name="Arial",
+    font_size=64
+):
+    with open(output_file, "w", encoding="utf-8") as f:
+        f.write(
+            "[Script Info]\n"
+            "ScriptType: v4.00+\n"
+            "PlayResX: 1080\n"
+            "PlayResY: 1920\n"
+            "ScaledBorderAndShadow: yes\n"
+            "\n"
+
+            "[V4+ Styles]\n"
+            "Format: Name, Fontname, Fontsize, "
+            "PrimaryColour, SecondaryColour, "
+            "OutlineColour, BackColour, Bold, Italic, "
+            "Underline, StrikeOut, ScaleX, ScaleY, "
+            "Spacing, Angle, BorderStyle, Outline, "
+            "Shadow, Alignment, MarginL, MarginR, "
+            "MarginV, Encoding\n"
+
+            f"Style: Default,"
+            f"{font_name},"
+            f"{font_size},"
+            "&H00FFFFFF,"
+            "&H00FFFFFF,"
+            "&H00000000,"
+            "&H80000000,"
+            "-1,0,0,0,"
+            "100,100,0,0,"
+            "1,4,2,5,"
+            "60,60,60,1\n"
+
+            "\n"
+            "[Events]\n"
+            "Format: Layer, Start, End, Style, Name, "
+            "MarginL, MarginR, MarginV, Effect, Text\n"
+        )
+
+        for word in words:
+            if "start" not in word or "end" not in word:
+                continue
+
+            text = word.get("word", "").strip()
+
+            if not text:
+                continue
+
+            start = seconds_to_ass_time(float(word["start"]))
+            end = seconds_to_ass_time(float(word["end"]))
+
+            subtitle_text = (
+                f"{{\\an5}}{{\\c{highlight_color}}}"
+                f"{escape_ass_text(text)}"
+                f"{{\\c&HFFFFFF&}}"
+            )
+
+            f.write(
+                "Dialogue: 0,"
+                f"{start},"
+                f"{end},"
+                "Default,,0,0,0,,"
+                f"{subtitle_text}\n"
+            )
+
+
+def generate_ass_karaoke_sentence(
+    words,
+    output_file,
+    highlight_color="&H00FFFF&",
+    normal_color="&HFFFFFF&",
+    font_name="Arial",
+    font_size=64
+):
+    """
+    Generate ASS subtitles with sentence-level karaoke highlighting.
+
+    - Entire sentence stays visible.
+    - Currently spoken word highlights using karaoke timing.
+    - No flickering between words.
+    - highlight_color: ASS AABBGGRR format.
+    - normal_color: ASS AABBGGRR format.
+    """
+
+    MAX_WORDS = 6
+    MAX_DURATION = 3.0
+
+    lines = []
+    current_words = []
+    line_start = None
+
+    for word in words:
+        if "start" not in word or "end" not in word:
+            continue
+
+        text = word.get("word", "").strip()
+
+        if not text:
+            continue
+
+        start = float(word["start"])
+        end = float(word["end"])
+
+        if line_start is None:
+            line_start = start
+
+        current_words.append({
+            "text": text,
+            "start": start,
+            "end": end
+        })
+
+        if (
+            len(current_words) >= MAX_WORDS
+            or end - line_start >= MAX_DURATION
+        ):
+            lines.append(current_words)
+            current_words = []
+            line_start = None
+
+    if current_words:
+        lines.append(current_words)
+
+    with open(
+        output_file,
+        "w",
+        encoding="utf-8"
+    ) as f:
+
+        f.write(
+            "[Script Info]\n"
+            "ScriptType: v4.00+\n"
+            "PlayResX: 1080\n"
+            "PlayResY: 1920\n"
+            "ScaledBorderAndShadow: yes\n"
+            "\n"
+
+            "[V4+ Styles]\n"
+            "Format: Name, Fontname, Fontsize, "
+            "PrimaryColour, SecondaryColour, "
+            "OutlineColour, BackColour, Bold, Italic, "
+            "Underline, StrikeOut, ScaleX, ScaleY, "
+            "Spacing, Angle, BorderStyle, Outline, "
+            "Shadow, Alignment, MarginL, MarginR, "
+            "MarginV, Encoding\n"
+
+            f"Style: Default,"
+            f"{font_name},"
+            f"{font_size},"
+            f"{highlight_color},"
+            f"{normal_color},"
+            "&H00000000,"
+            "&H80000000,"
+            "-1,0,0,0,"
+            "100,100,0,0,"
+            "1,4,2,5,"
+            "60,60,60,1\n"
+
+            "\n"
+
             "[Events]\n"
             "Format: Layer, Start, End, Style, Name, "
             "MarginL, MarginR, MarginV, Effect, Text\n"
@@ -169,7 +486,7 @@ def generate_ass(words, output_file):
 
             for word in line_words:
 
-                # ASS karaoke duration is in centiseconds.
+                # ASS karaoke duration is centiseconds
                 duration = max(
                     1,
                     round(
@@ -195,33 +512,7 @@ def generate_ass(words, output_file):
                 "Default,,0,0,0,,"
                 f"{{\\an5}}{subtitle_text}\n"
             )
-
-
-def extract_audio(
-    video_file,
-    start,
-    duration,
-    audio_file
-):
-    """
-    Extract only the audio needed for this clip.
-    """
-
-    command = [
-        "ffmpeg",
-        "-y",
-        "-ss", str(start),
-        "-i", str(video_file),
-        "-t", str(duration),
-        "-vn",
-        "-ac", "1",
-        "-ar", "16000",
-        "-c:a", "pcm_s16le",
-        str(audio_file)
-    ]
-
-    run_command(command)
-
+            
 
 def create_final_clip(
     video_file,
@@ -303,7 +594,8 @@ def generateClips(
     whisper_model,
     align_model,
     align_metadata,
-    device
+    device,
+    subtitle_config=None
 ):
     """
     Generate all selected clips for a video.
@@ -532,10 +824,61 @@ def generateClips(
                 "Generating ASS subtitles..."
             )
 
-            generate_ass(
-                words,
-                temp_ass
-            )
+            # --------------------------------------------------
+            # Resolve subtitle parameters from subtitle_config.
+            # All fields fall back to the function-signature
+            # defaults when subtitle_config is absent.
+            # --------------------------------------------------
+
+            subtitles_enabled = True
+            sub_style = "plain"
+            sub_font = "Arial"
+            sub_size = 64
+            sub_color = "&H00FFFF&"
+
+            if subtitle_config is not None:
+                subtitles_enabled = subtitle_config.enabled
+                sub_style = subtitle_config.style
+                sub_font = subtitle_config.font_name
+                sub_size = subtitle_config.font_size
+                sub_color = subtitle_config.highlight_color
+
+            if not subtitles_enabled:
+                # Burn no subtitles; write an empty ASS file so
+                # create_final_clip() still gets a valid path.
+                with open(temp_ass, "w", encoding="utf-8") as f:
+                    f.write(
+                        "[Script Info]\n"
+                        "ScriptType: v4.00+\n"
+                        "[V4+ Styles]\n"
+                        "[Events]\n"
+                    )
+                print("Subtitles disabled — writing empty ASS file.")
+            elif sub_style == "word_level":
+                generate_ass_word_level(
+                    words,
+                    temp_ass,
+                    highlight_color=sub_color,
+                    font_name=sub_font,
+                    font_size=sub_size
+                )
+            elif sub_style == "karaoke_sentence":
+                generate_ass_karaoke_sentence(
+                    words,
+                    temp_ass,
+                    highlight_color=sub_color,
+                    font_name=sub_font,
+                    font_size=sub_size
+                )
+            else:
+                # Default: "plain" (grouped lines, no highlighting)
+                # or any unrecognised style value.
+                generate_ass_plain(
+                    words,
+                    temp_ass,
+                    font_name=sub_font,
+                    font_size=sub_size
+                )
 
             # -------------------------------------------------
             # 5. Generate final video

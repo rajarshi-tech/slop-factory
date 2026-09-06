@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from typing import Optional, List
 
 from app.database import get_db
-from app.init_db import insert_job, get_job, get_all_jobs, archive_jobs, unarchive_jobs, delete_jobs
+from app.init_db import insert_job, update_job, get_job, get_all_jobs, archive_jobs, unarchive_jobs, delete_jobs
 from app.utils.storage import youtube_video_dir, STORAGE
 from app.core.config import YOUTUBE_API_KEY
 from app.pipeline.youtube.trendCalculator import calculate_trend_for_video
@@ -29,6 +29,15 @@ class ArchiveRequest(BaseModel):
 class DeleteJobsRequest(BaseModel):
     video_ids: Optional[List[str]] = None
     video_id: Optional[str] = None
+
+
+class UpdateClipRequest(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+
+
+class UpdateJobRequest(BaseModel):
+    title: Optional[str] = None
 
 
 def extract_video_id(url: str) -> Optional[str]:
@@ -93,6 +102,7 @@ async def get_job_clips(video_id: str):
                     "filename": filename,
                     "url": relative_url,
                     "title": matching_ts.get("title", filename.replace(".mp4", "")),
+                    "description": matching_ts.get("description", ""),
                     "start": matching_ts.get("start"),
                     "end": matching_ts.get("end"),
                     "score": matching_ts.get("score"),
@@ -109,6 +119,88 @@ async def get_job_clips(video_id: str):
             status_code=500,
             detail=f"Failed to fetch clips for video {video_id}: {str(e)}"
         )
+
+
+@router.patch("/{video_id}/clips/{clip_id}")
+async def update_clip_metadata(video_id: str, clip_id: str, request: UpdateClipRequest):
+    """Update title and/or description for a clip in clipTimestamps.json"""
+    try:
+        video_dir = youtube_video_dir(video_id)
+        timestamps_file = video_dir / "clipTimestamps.json"
+        timestamps_data = []
+        if timestamps_file.exists():
+            try:
+                with open(timestamps_file, "r", encoding="utf-8") as f:
+                    timestamps_data = json.load(f)
+            except Exception:
+                timestamps_data = []
+
+        # Find index from clip_id (e.g. videoId_1 -> index 0)
+        clip_index = None
+        if "_" in clip_id:
+            try:
+                clip_index = int(clip_id.split("_")[-1]) - 1
+            except ValueError:
+                clip_index = None
+
+        if clip_index is None or clip_index < 0:
+            raise HTTPException(status_code=400, detail="Invalid clip ID format")
+
+        while len(timestamps_data) <= clip_index:
+            timestamps_data.append({})
+
+        if request.title is not None:
+            timestamps_data[clip_index]["title"] = request.title.strip()[:100]
+        if request.description is not None:
+            timestamps_data[clip_index]["description"] = request.description.strip()
+
+        with open(timestamps_file, "w", encoding="utf-8") as f:
+            json.dump(timestamps_data, f, indent=4, ensure_ascii=False)
+
+        return {
+            "status": "success",
+            "video_id": video_id,
+            "clip_id": clip_id,
+            "clip": timestamps_data[clip_index],
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to update clip metadata: {str(e)}"
+        )
+
+
+@router.patch("/{video_id}")
+async def update_job_details(video_id: str, request: UpdateJobRequest):
+    """Update source video title in jobs table and metadata.json"""
+    try:
+        job = get_job(video_id)
+        if not job:
+            raise HTTPException(status_code=404, detail=f"Job with video_id {video_id} not found")
+
+        if request.title is not None:
+            new_title = request.title.strip()
+            update_job(video_id, title=new_title)
+
+            metadata_file = youtube_video_dir(video_id) / "metadata.json"
+            if metadata_file.exists():
+                try:
+                    with open(metadata_file, "r", encoding="utf-8") as f:
+                        meta = json.load(f)
+                    meta["title"] = new_title
+                    with open(metadata_file, "w", encoding="utf-8") as f:
+                        json.dump(meta, f, indent=4, ensure_ascii=False)
+                except Exception:
+                    pass
+
+        updated = get_job(video_id)
+        return {"status": "success", "job": updated}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update job: {str(e)}")
 
 
 @router.get("/{video_id}")

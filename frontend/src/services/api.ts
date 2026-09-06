@@ -221,6 +221,7 @@ export interface Clip {
   filename: string;
   url: string;
   title: string;
+  description?: string;
   start?: number;
   end?: number;
   score?: number;
@@ -233,6 +234,14 @@ export interface JobClipsResponse {
   count: number;
 }
 
+export interface SubtitleConfig {
+  enabled: boolean;
+  style: 'plain' | 'karaoke_sentence' | 'word_level';
+  font_name: string;
+  font_size: number;
+  highlight_color: string;
+}
+
 export interface ProcessResponse {
   [videoId: string]: string;
 }
@@ -242,6 +251,12 @@ export interface UploadChannel {
   name: string;
 }
 
+export interface ClipScheduleOverride {
+  clip_id: string;
+  title?: string;
+  description?: string;
+}
+
 export interface UploadScheduleRequest {
   video_ids: string[];
   channel_id: string;
@@ -249,6 +264,7 @@ export interface UploadScheduleRequest {
   start_date: string;
   start_time: string;
   timezone: string;
+  clip_overrides?: ClipScheduleOverride[];
 }
 
 export interface UploadScheduleItem {
@@ -256,12 +272,32 @@ export interface UploadScheduleItem {
   clip_id: string;
   clip_filename: string;
   title: string;
+  description?: string;
   channel_name: string;
   scheduled_publish_at: string;
   display_publish_at: string;
   timezone: string;
   slot_number: number;
   day_number: number;
+}
+
+export interface UploadJob {
+  id: number;
+  source_video_id: string;
+  clip_id: string;
+  clip_filename: string;
+  clip_path: string;
+  title: string;
+  description?: string;
+  channel_id: string;
+  channel_name: string;
+  scheduled_publish_at: string;
+  timezone: string;
+  upload_status: 'queued' | 'uploading' | 'uploaded' | 'failed';
+  youtube_video_id?: string;
+  error_message?: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface UploadPreviewResponse {
@@ -405,8 +441,14 @@ export const calculateTrends = async (
 };
 
 // Processing & Clips
-export const processVideos = async (videoIds: string[]): Promise<ProcessResponse> => {
-  const response = await client.post('/api/process', { video_ids: videoIds });
+export const processVideos = async (
+  videoIds: string[],
+  subtitleConfig?: SubtitleConfig
+): Promise<ProcessResponse> => {
+  const response = await client.post('/api/process', {
+    video_ids: videoIds,
+    ...(subtitleConfig !== undefined && { subtitle_config: subtitleConfig }),
+  });
   return response.data;
 };
 
@@ -447,6 +489,31 @@ export const previewUploadSchedule = async (request: UploadScheduleRequest): Pro
 
 export const createScheduledUploads = async (request: UploadScheduleRequest): Promise<{ upload_count: number; message: string }> => {
   const response = await client.post('/api/uploads', request);
+  return response.data;
+};
+
+export const getUploadJobs = async (
+  videoIds?: string[]
+): Promise<{ upload_jobs: UploadJob[] }> => {
+  const params = videoIds && videoIds.length > 0 ? { video_ids: videoIds.join(',') } : undefined;
+  const response = await client.get('/api/uploads', { params });
+  return response.data;
+};
+
+export const updateClipMetadata = async (
+  videoId: string,
+  clipId: string,
+  data: { title?: string; description?: string }
+): Promise<{ status: string; video_id: string; clip_id: string; clip: Partial<Clip> }> => {
+  const response = await client.patch(`/api/jobs/${videoId}/clips/${clipId}`, data);
+  return response.data;
+};
+
+export const updateJobTitle = async (
+  videoId: string,
+  title: string
+): Promise<{ status: string; job: Job }> => {
+  const response = await client.patch(`/api/jobs/${videoId}`, { title });
   return response.data;
 };
 

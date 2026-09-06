@@ -92,7 +92,7 @@ def load_whisper_models():
     )
 
 
-def pipeline(video_id: str):
+def pipeline(video_id: str, subtitle_config=None):
 
     # ---------------------------------------------------------
     # Models are loaded lazily.
@@ -244,7 +244,8 @@ def pipeline(video_id: str):
             whisper_model,
             align_model,
             align_metadata,
-            whisper_device
+            whisper_device,
+            subtitle_config=subtitle_config
         )
         save_metadata_field("processing_state", "clips_ready")
 

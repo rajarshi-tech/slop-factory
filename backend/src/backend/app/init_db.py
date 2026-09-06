@@ -75,6 +75,7 @@ def create_tables():
         clip_filename TEXT NOT NULL,
         clip_path TEXT NOT NULL,
         title TEXT NOT NULL,
+        description TEXT DEFAULT '',
         channel_id TEXT NOT NULL,
         channel_name TEXT NOT NULL,
         scheduled_publish_at TEXT NOT NULL,
@@ -88,6 +89,10 @@ def create_tables():
     """)
     db.execute("CREATE INDEX IF NOT EXISTS idx_upload_jobs_status ON upload_jobs(upload_status)")
     db.execute("CREATE INDEX IF NOT EXISTS idx_upload_jobs_schedule ON upload_jobs(scheduled_publish_at)")
+
+    upload_columns = {row[1] for row in db.execute("PRAGMA table_info(upload_jobs)").fetchall()}
+    if "description" not in upload_columns:
+        db.execute("ALTER TABLE upload_jobs ADD COLUMN description TEXT DEFAULT ''")
 
     db.execute("""
     CREATE TABLE IF NOT EXISTS youtube_channels (
@@ -137,13 +142,13 @@ def create_upload_jobs(upload_jobs: List[dict]) -> List[dict]:
         for job in upload_jobs:
             cursor = db.execute("""
                 INSERT INTO upload_jobs (
-                    source_video_id, clip_id, clip_filename, clip_path, title,
+                    source_video_id, clip_id, clip_filename, clip_path, title, description,
                     channel_id, channel_name, scheduled_publish_at, timezone,
                     upload_status, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?)
             """, (
                 job["source_video_id"], job["clip_id"], job["clip_filename"],
-                job["clip_path"], job["title"], job["channel_id"],
+                job["clip_path"], job["title"], job.get("description", ""), job["channel_id"],
                 job["channel_name"], job["scheduled_publish_at"], job["timezone"],
                 now, now,
             ))
@@ -160,7 +165,7 @@ def create_upload_jobs(upload_jobs: List[dict]) -> List[dict]:
 
 def update_upload_job(upload_job_id: int, **kwargs):
     """Update an upload job without allowing arbitrary SQL field values."""
-    allowed_fields = {"upload_status", "youtube_video_id", "error_message"}
+    allowed_fields = {"upload_status", "youtube_video_id", "error_message", "title", "description"}
     changes = {key: value for key, value in kwargs.items() if key in allowed_fields}
     if not changes:
         return None
@@ -181,6 +186,24 @@ def update_upload_job(upload_job_id: int, **kwargs):
         raise
     finally:
         db.close()
+
+
+def get_upload_jobs(source_video_ids: Optional[List[str]] = None) -> List[dict]:
+    """Retrieve upload jobs, optionally filtered by source video IDs."""
+    db = get_db()
+    try:
+        if source_video_ids:
+            placeholders = ",".join(["?"] * len(source_video_ids))
+            rows = db.execute(
+                f"SELECT * FROM upload_jobs WHERE source_video_id IN ({placeholders}) ORDER BY updated_at DESC",
+                list(source_video_ids)
+            ).fetchall()
+        else:
+            rows = db.execute("SELECT * FROM upload_jobs ORDER BY updated_at DESC").fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        db.close()
+
 
 
 def get_youtube_channels() -> List[dict]:
