@@ -312,11 +312,14 @@ def generate_ass_karaoke_sentence(
     """
     Generate ASS subtitles with sentence-level karaoke highlighting.
 
-    - Entire sentence stays visible.
-    - Currently spoken word highlights using karaoke timing.
-    - No flickering between words.
-    - highlight_color: ASS AABBGGRR format.
-    - normal_color: ASS AABBGGRR format.
+    - Entire sentence stays visible at all times.
+    - Only the currently spoken word is highlighted (single word, not cumulative).
+    - No flicker / disappearing between word-highlight transitions:
+      implemented as consecutive Dialogue events (one per word) whose
+      End time is pinned to the next word's Start time, so there is
+      never a gap between events.
+    - highlight_color: ASS color in "&HBBGGRR&" override format.
+    - normal_color: ASS color in "&HBBGGRR&" override format.
     """
 
     MAX_WORDS = 6
@@ -384,7 +387,7 @@ def generate_ass_karaoke_sentence(
             f"Style: Default,"
             f"{font_name},"
             f"{font_size},"
-            f"{highlight_color},"
+            f"{normal_color},"
             f"{normal_color},"
             "&H00000000,"
             "&H80000000,"
@@ -407,40 +410,47 @@ def generate_ass_karaoke_sentence(
             if not line_words:
                 continue
 
-            start = line_words[0]["start"]
-            end = line_words[-1]["end"]
+            # Pre-escape text once per word to avoid re-escaping per iteration.
+            escaped_words = [
+                escape_ass_text(word["text"]) for word in line_words
+            ]
 
-            subtitle_text = ""
+            num_words = len(line_words)
 
-            for word in line_words:
+            for i in range(num_words):
 
-                # ASS karaoke duration is centiseconds
-                duration = max(
-                    1,
-                    round(
-                        (word["end"] - word["start"]) * 100
+                # Active word's visible window: from its own start up to
+                # the NEXT word's start. This removes any inter-word gap
+                # so the line never blanks out between highlight changes.
+                event_start = line_words[i]["start"]
+
+                if i + 1 < num_words:
+                    event_end = line_words[i + 1]["start"]
+                else:
+                    event_end = line_words[i]["end"]
+
+                # Safety: guard against out-of-order / zero-length timing.
+                if event_end <= event_start:
+                    event_end = event_start + 0.01
+
+                subtitle_text = ""
+
+                for j in range(num_words):
+                    color = highlight_color if j == i else normal_color
+                    subtitle_text += (
+                        f"{{\\c{color}}}"
+                        f"{escaped_words[j]} "
                     )
-                )
 
-                text = escape_ass_text(
-                    word["text"]
-                )
+                subtitle_text = subtitle_text.strip()
 
-                subtitle_text += (
-                    f"{{\\kf{duration}}}"
-                    f"{text} "
-                )
-
-            subtitle_text = subtitle_text.strip()
-
-            f.write(
-                "Dialogue: 0,"
-                f"{seconds_to_ass_time(start)},"
-                f"{seconds_to_ass_time(end)},"
-                "Default,,0,0,0,,"
-                f"{pos_tag}{subtitle_text}\n"
-            )
-            
+                f.write(
+                    "Dialogue: 0,"
+                    f"{seconds_to_ass_time(event_start)},"
+                    f"{seconds_to_ass_time(event_end)},"
+                    "Default,,0,0,0,,"
+                    f"{pos_tag}{subtitle_text}\n"
+                )         
 
 def create_final_clip(
     video_file,
