@@ -27,7 +27,9 @@ An end-to-end automated YouTube content research and video processing suite. Sea
 - **Job Queue** – SQLite-backed job queue with status tracking per video.
 - **WebSocket Live Updates** – Real-time job state streaming to the frontend.
 - **LLM Configuration** – Switch between Ollama (local) and Gemini (cloud) providers from the UI.
-- **Media Pipeline** – Download → WhisperX transcription → AI clip generation (run from backend CLI).
+- **Media Pipeline** – Download → WhisperX transcription → AI clip generation with configurable subtitles.
+- **Clip Scheduling** – Connect YouTube channels with OAuth and schedule generated clips for upload.
+- **API Key Setup** – Configure YouTube and Gemini keys from the application when they are not in `.env`.
 
 ---
 
@@ -260,6 +262,39 @@ If the video already exists, `created` is `false` and the existing job is return
 
 ---
 
+### Media Processing — `/api/process`
+
+| Method | Route | Body | Description |
+|--------|-------|------|-------------|
+| `POST` | `/api/process` | `{ video_ids, subtitle_config? }` | Download, transcribe, and generate clips for selected videos |
+
+`subtitle_config` supports `enabled`, `style` (`plain`, `karaoke_sentence`, or `word_level`), `font_name`, `font_size`, `highlight_color`, and `position`.
+
+### Upload Scheduling — `/api/uploads`
+
+| Method | Route | Description |
+|--------|-------|-------------|
+| `GET` | `/api/uploads` | List scheduled upload jobs |
+| `GET` | `/api/uploads/channels` | List connected YouTube channels without secrets |
+| `PUT` | `/api/uploads/channels/{channel_id}` | Update a channel's default description |
+| `DELETE` | `/api/uploads/channels/{channel_id}` | Remove a connected channel |
+| `POST` | `/api/uploads/preview` | Preview a clip upload schedule |
+| `POST` | `/api/uploads` | Create scheduled upload jobs |
+
+Generated clips must exist and source jobs must be processed before scheduling.
+
+### API Keys and YouTube OAuth
+
+| Method | Route | Description |
+|--------|-------|-------------|
+| `GET` | `/api/config/check-keys` | Check whether YouTube and Gemini keys are configured |
+| `POST` | `/api/config/set-keys` | Save API keys to the project `.env` file |
+| `GET` | `/auth/youtube/status` | Check whether a YouTube OAuth client is configured |
+| `GET` | `/auth/youtube` | Start the Google OAuth connection flow |
+| `GET` | `/auth/youtube/callback` | OAuth callback used by Google |
+
+For uploads, configure a Google **Web application** OAuth client and use `http://localhost:8000/auth/youtube/callback` as the local redirect URI. The client secret and channel refresh tokens remain server-side.
+
 ## Data Models
 
 ### `Job` — SQLite `jobs` table
@@ -370,7 +405,7 @@ The recommended workflow:
 4. (Optional) Direct URL    →  POST /api/jobs  { url }
 ```
 
-Full media processing (CLI only, not yet wired to API):
+Media processing is available through the API. The legacy interactive CLI remains available for pipeline experimentation:
 
 ```
 Download  →  Transcribe (WhisperX large-v3)  →  Generate Clips (LLM)
