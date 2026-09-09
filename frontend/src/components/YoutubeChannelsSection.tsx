@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { API_BASE_URL, getUploadChannels, getYouTubeOAuthStatus, removeUploadChannel, uploadYouTubeClientSecret } from '../services/api';
+import { API_BASE_URL, getUploadChannels, getYouTubeOAuthStatus, removeUploadChannel, updateUploadChannel, uploadYouTubeClientSecret } from '../services/api';
 import type { UploadChannel } from '../services/api';
 
 const errorMessage = (error: unknown) => {
@@ -17,6 +17,7 @@ export const YoutubeChannelsSection = () => {
   const [oauthConfigured, setOauthConfigured] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [savingChannelId, setSavingChannelId] = useState<string | null>(null);
 
   const loadChannels = async () => {
     try {
@@ -71,12 +72,32 @@ export const YoutubeChannelsSection = () => {
     }
   };
 
+  const handleDescriptionChange = (channelId: string, value: string) => {
+    setChannels((current) => current.map((channel) => (
+      channel.id === channelId ? { ...channel, default_description: value } : channel
+    )));
+  };
+
+  const handleSaveDescription = async (channel: UploadChannel) => {
+    try {
+      setSavingChannelId(channel.id);
+      setError('');
+      const response = await updateUploadChannel(channel.id, channel.default_description);
+      setChannels((current) => current.map((item) => item.id === channel.id ? response.channel : item));
+      setMessage(`${channel.name} channel settings saved.`);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setSavingChannelId(null);
+    }
+  };
+
   return (
     <section className="bg-slate-900/80 border border-slate-800 rounded-3xl p-6 sm:p-8 backdrop-blur-xl shadow-2xl space-y-5">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-xl font-bold text-white tracking-tight">YouTube upload channels</h2>
-          <p className="text-xs text-slate-400 mt-1">Connect a channel once with Google, then use it for all future scheduled uploads.</p>
+          <h2 className="text-xl font-bold text-white tracking-tight">Channel settings</h2>
+          <p className="text-xs text-slate-400 mt-1">Connect YouTube channels and set the default description used for future uploads.</p>
         </div>
         <button onClick={() => void loadChannels()} disabled={isLoading} className="px-3 py-2 text-xs font-semibold rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 disabled:opacity-50">Refresh</button>
       </div>
@@ -86,9 +107,24 @@ export const YoutubeChannelsSection = () => {
 
       <div className="space-y-2">
         {isLoading ? <p className="text-xs text-slate-500">Loading channels...</p> : channels.length === 0 ? <p className="text-xs text-slate-500">No upload channels connected yet.</p> : channels.map((channel) => (
-          <div key={channel.id} className="flex items-center justify-between gap-3 bg-slate-950/70 border border-slate-800 rounded-xl p-3">
-            <div className="min-w-0"><p className="text-sm font-semibold text-slate-200 truncate">{channel.name}</p><p className="text-[11px] text-slate-500 font-mono truncate">{channel.id}</p></div>
-            <button onClick={() => void handleRemove(channel)} className="shrink-0 px-2.5 py-1.5 text-xs rounded-lg text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30">Remove</button>
+          <div key={channel.id} className="bg-slate-950/70 border border-slate-800 rounded-xl p-4 space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0"><p className="text-sm font-semibold text-slate-200 truncate">{channel.name}</p><p className="text-[11px] text-slate-500 font-mono truncate">{channel.id}</p></div>
+              <button onClick={() => void handleRemove(channel)} className="shrink-0 px-2.5 py-1.5 text-xs rounded-lg text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30">Remove</button>
+            </div>
+            <div className="space-y-2">
+              <label className="block text-xs font-semibold text-slate-400">Default video description</label>
+              <textarea
+                value={channel.default_description}
+                onChange={(event) => handleDescriptionChange(channel.id, event.target.value)}
+                rows={3}
+                placeholder="Optional description applied to new uploads on this channel"
+                className="w-full resize-y rounded-xl bg-slate-900 border border-slate-700 px-3 py-2.5 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+              <button onClick={() => void handleSaveDescription(channel)} disabled={savingChannelId === channel.id} className="px-3 py-2 text-xs font-semibold rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50">
+                {savingChannelId === channel.id ? 'Saving...' : 'Save channel settings'}
+              </button>
+            </div>
           </div>
         ))}
       </div>

@@ -181,6 +181,11 @@ export const ProcessedSection: React.FC<ProcessedSectionProps> = ({
       });
   }, [selectedVideoIds.length]);
 
+  useEffect(() => {
+    setSchedulePreview([]);
+    setUploadMessage('');
+  }, [channelId]);
+
   const toggleSelectedVideo = (videoId: string) => {
     setSelectedVideoIds((previous) =>
       previous.includes(videoId) ? previous.filter((id) => id !== videoId) : [...previous, videoId]
@@ -471,7 +476,7 @@ export const ProcessedSection: React.FC<ProcessedSectionProps> = ({
 
       {/* Uploading Status Banner */}
       {activeUploadingCount > 0 && (
-        <div className="bg-gradient-to-r from-blue-950/70 to-indigo-950/70 border border-blue-500/40 rounded-2xl p-4 shadow-lg backdrop-blur-xl flex items-center justify-between gap-4 animate-pulse">
+        <div className="bg-linear-to-r from-blue-950/70 to-indigo-950/70 border border-blue-500/40 rounded-2xl p-4 shadow-lg backdrop-blur-xl flex items-center justify-between gap-4 animate-pulse">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-lg bg-blue-500/20 border border-blue-400/30 flex items-center justify-center text-blue-300">
               <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">

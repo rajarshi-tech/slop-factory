@@ -1,6 +1,5 @@
 import re
 import json
-import ollama
 
 from app.llm.base import LLMProvider
 from app.llm.factory import create_llm
@@ -24,8 +23,8 @@ MAX_CANDIDATES_PER_CHUNK = 8
 MAX_FINAL_CLIPS = 20
 
 # Clip duration
-MIN_CLIP_LENGTH = 15
-PREFERRED_MIN_LENGTH = 25
+MIN_CLIP_LENGTH = 30
+PREFERRED_MIN_LENGTH = 45
 PREFERRED_MAX_LENGTH = 90
 MAX_CLIP_LENGTH = 120
 

@@ -16,6 +16,7 @@ from app.init_db import (
     get_upload_jobs,
     get_youtube_channel,
     get_youtube_channels,
+    update_youtube_channel_description,
     update_upload_job,
 )
 from app.services.youtube import upload_scheduled_video
@@ -40,12 +41,20 @@ class UploadScheduleRequest(BaseModel):
     clip_overrides: Optional[List[ClipScheduleOverride]] = None
 
 
+class ChannelSettingsRequest(BaseModel):
+    default_description: str = ""
+
+
 def _configured_channels() -> List[dict]:
     return get_youtube_channels()
 
 
 def _public_channel(channel: dict) -> dict:
-    return {"id": channel["channel_id"], "name": channel["channel_name"]}
+    return {
+        "id": channel["channel_id"],
+        "name": channel["channel_name"],
+        "default_description": channel.get("default_description", ""),
+    }
 
 
 def _get_channel(channel_id: str) -> dict:
@@ -73,7 +82,11 @@ def _schedule_start(request: UploadScheduleRequest) -> tuple[datetime, ZoneInfo]
     return local_start, zone
 
 
-def _collect_clips(video_ids: List[str], overrides: Optional[dict] = None) -> List[dict]:
+def _collect_clips(
+    video_ids: List[str],
+    overrides: Optional[dict] = None,
+    default_description: str = "",
+) -> List[dict]:
     overrides = overrides or {}
     clips = []
     for video_id in video_ids:
@@ -103,8 +116,7 @@ def _collect_clips(video_ids: List[str], overrides: Optional[dict] = None) -> Li
 
             description = override.get("description")
             if description is None:
-                description = str(metadata.get("description") or "")
-            else:
+                description = default_description or str(metadata.get("description") or "")
                 description = str(description).strip()
 
             clips.append({
@@ -130,7 +142,7 @@ def _build_schedule(request: UploadScheduleRequest) -> List[dict]:
                 "title": item.title,
                 "description": item.description,
             }
-    clips = _collect_clips(request.video_ids, overrides_map)
+    clips = _collect_clips(request.video_ids, overrides_map, channel.get("default_description", ""))
     slot_interval = timedelta(days=1) / request.videos_per_day
     schedule = []
     for index, clip in enumerate(clips):
@@ -206,6 +218,14 @@ def remove_upload_channel(channel_id: str):
     if not delete_youtube_channel(channel_id):
         raise HTTPException(status_code=404, detail="YouTube channel was not found.")
     return {"message": "YouTube channel removed."}
+
+
+@router.put("/channels/{channel_id}")
+def update_upload_channel(channel_id: str, request: ChannelSettingsRequest):
+    channel = update_youtube_channel_description(channel_id, request.default_description.strip())
+    if not channel:
+        raise HTTPException(status_code=404, detail="YouTube channel was not found.")
+    return {"channel": _public_channel(channel), "message": "Channel settings saved."}
 
 
 @router.post("/preview")

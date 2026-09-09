@@ -98,6 +98,7 @@ def create_tables():
     CREATE TABLE IF NOT EXISTS youtube_channels (
         channel_id TEXT PRIMARY KEY,
         channel_name TEXT NOT NULL,
+        default_description TEXT NOT NULL DEFAULT '',
         client_id TEXT NOT NULL,
         client_secret TEXT NOT NULL,
         refresh_token TEXT NOT NULL,
@@ -106,6 +107,9 @@ def create_tables():
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
     """)
+    channel_columns = {row[1] for row in db.execute("PRAGMA table_info(youtube_channels)").fetchall()}
+    if "default_description" not in channel_columns:
+        db.execute("ALTER TABLE youtube_channels ADD COLUMN default_description TEXT NOT NULL DEFAULT ''")
     db.execute("""
     CREATE TABLE IF NOT EXISTS youtube_oauth_states (
         state TEXT PRIMARY KEY,
@@ -210,7 +214,8 @@ def get_youtube_channels() -> List[dict]:
     db = get_db()
     try:
         rows = db.execute(
-            "SELECT channel_id, channel_name, created_at, updated_at FROM youtube_channels ORDER BY channel_name COLLATE NOCASE"
+            "SELECT channel_id, channel_name, default_description, created_at, updated_at "
+            "FROM youtube_channels ORDER BY channel_name COLLATE NOCASE"
         ).fetchall()
         return [dict(row) for row in rows]
     finally:
@@ -222,6 +227,25 @@ def get_youtube_channel(channel_id: str) -> Optional[dict]:
     try:
         row = db.execute("SELECT * FROM youtube_channels WHERE channel_id = ?", (channel_id,)).fetchone()
         return dict(row) if row else None
+    finally:
+        db.close()
+
+
+def update_youtube_channel_description(channel_id: str, default_description: str) -> Optional[dict]:
+    db = get_db()
+    try:
+        cursor = db.execute(
+            "UPDATE youtube_channels SET default_description = ?, updated_at = ? WHERE channel_id = ?",
+            (default_description, datetime.now().isoformat(), channel_id),
+        )
+        db.commit()
+        if cursor.rowcount == 0:
+            return None
+        row = db.execute("SELECT * FROM youtube_channels WHERE channel_id = ?", (channel_id,)).fetchone()
+        return dict(row) if row else None
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()
 

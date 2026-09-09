@@ -250,6 +250,7 @@ export interface ProcessResponse {
 export interface UploadChannel {
   id: string;
   name: string;
+  default_description: string;
 }
 
 export interface ClipScheduleOverride {
@@ -466,6 +467,16 @@ export const getUploadChannels = async (): Promise<{ channels: UploadChannel[] }
 
 export const removeUploadChannel = async (channelId: string): Promise<{ message: string }> => {
   const response = await client.delete(`/api/uploads/channels/${channelId}`);
+  return response.data;
+};
+
+export const updateUploadChannel = async (
+  channelId: string,
+  defaultDescription: string
+): Promise<{ channel: UploadChannel; message: string }> => {
+  const response = await client.put(`/api/uploads/channels/${channelId}`, {
+    default_description: defaultDescription,
+  });
   return response.data;
 };
 
