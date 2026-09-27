@@ -371,3 +371,13 @@ trend_score = ln(velocity + 1.0) * engagement
 - **ISO 8601 Timestamps**: Search date filters (`publishedAfter`, `publishedBefore`) require full RFC 3339 / ISO 8601 timestamps with timezone designator (e.g. `2025-01-01T00:00:00Z`).
 - **WhisperX Requirements**: Requires FFmpeg on system `PATH`. When GPU is absent, model loader automatically falls back to CPU `int8`.
 - **CORS Allowed Origins**: FastAPI defaults allow `http://localhost:3000` and `http://localhost:5173`. Add any other development or remote hosts in `main.py`.
+
+---
+
+## 10. Installed Workspace Skills
+
+Dedicated skills reside in `.agents/skills/`:
+- **`slop-factory`** (`.agents/skills/slop-factory/SKILL.md`): End-to-end operation, job queue management, YouTube OAuth, and troubleshooting.
+- **`slop-pipeline-creator`** (`.agents/skills/slop-pipeline-creator/SKILL.md`): Blueprint and step-by-step checklist for adding new content sources (e.g., Reddit, TikTok).
+- **`media-processing`** (`.agents/skills/media-processing/SKILL.md`): FFmpeg commands, WhisperX setup, and ASS subtitle generation (`plain`, `karaoke_sentence`, `word_level`).
+

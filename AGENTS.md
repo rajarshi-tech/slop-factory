@@ -120,3 +120,12 @@ npm run lint     # ESLint checks
 - Only edit files directly required to fulfill the user's explicit request.
 - When adding new features or pipeline stages, write defensive unit-level code that gracefully handles missing files, empty responses, network drops, and corrupted JSON configurations.
 - Verify changes with `npm run build` / `npm run lint` for frontend edits and import/syntax sanity checks for backend edits before declaring completion.
+
+---
+
+## 7. Installed Workspace Skills
+The repository includes dedicated skills under `.agents/skills/`:
+- **`slop-factory`** (`.agents/skills/slop-factory/SKILL.md`): Master operational runbook for YouTube ingestion, trend scoring, media processing, SQLite state tracking, and YouTube OAuth channel scheduling.
+- **`slop-pipeline-creator`** (`.agents/skills/slop-pipeline-creator/SKILL.md`): Step-by-step checklist and architecture pattern for scaffolding new pipeline sources (e.g., Reddit, TikTok, Podcasts).
+- **`media-processing`** (`.agents/skills/media-processing/SKILL.md`): Deep guide for FFmpeg audio extraction, WhisperX alignment, and ASS subtitle generation (`plain`, `karaoke_sentence`, `word_level`).
+
