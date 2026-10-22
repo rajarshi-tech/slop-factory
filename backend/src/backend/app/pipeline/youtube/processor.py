@@ -452,6 +452,7 @@ def generate_ass_karaoke_sentence(
                     f"{pos_tag}{subtitle_text}\n"
                 )         
 
+
 def create_final_clip(
     video_file,
     start,

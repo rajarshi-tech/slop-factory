@@ -1,5 +1,6 @@
 import re
 import json
+import math
 
 from app.llm.base import LLMProvider
 from app.llm.factory import create_llm
@@ -20,16 +21,16 @@ CHUNK_OVERLAP = 25
 MAX_CANDIDATES_PER_CHUNK = 8
 
 # Final output
-MAX_FINAL_CLIPS = 20
+MAX_FINAL_CLIPS = 100
 
 # Clip duration
-MIN_CLIP_LENGTH = 30
+MIN_CLIP_LENGTH = 15
 PREFERRED_MIN_LENGTH = 45
 PREFERRED_MAX_LENGTH = 90
 MAX_CLIP_LENGTH = 120
 
 # Minimum score required for a clip to survive final filtering
-MIN_SCORE = 60
+MIN_SCORE = 50
 
 
 # ============================================================
@@ -523,57 +524,6 @@ def discover_candidates(chunk, llm: LLMProvider):
 # CANDIDATE DEDUPLICATION
 # ============================================================
 
-def _text_similarity(text_a, text_b):
-    """
-    Calculate a conservative lexical similarity score.
-
-    This intentionally avoids another LLM call. Topic/title similarity is
-    used as a second signal alongside timestamp overlap.
-    """
-    from difflib import SequenceMatcher
-
-    a = _normalize_caption_for_comparison(text_a)
-    b = _normalize_caption_for_comparison(text_b)
-
-    if not a or not b:
-        return 0.0
-
-    if a == b:
-        return 1.0
-
-    a_words = set(a.split())
-    b_words = set(b.split())
-
-    if not a_words or not b_words:
-        return 0.0
-
-    jaccard = len(a_words & b_words) / len(a_words | b_words)
-    sequence = SequenceMatcher(None, a, b).ratio()
-
-    # Jaccard catches shared topic vocabulary; sequence catches similar
-    # wording/order. Requiring both signals makes this less aggressive.
-    return (0.6 * jaccard) + (0.4 * sequence)
-
-
-def _topics_are_similar(topic_a, topic_b):
-    """Return True only for strong topic/title similarity."""
-    similarity = _text_similarity(topic_a, topic_b)
-
-    if similarity >= 0.72:
-        return True
-
-    # Short topic strings can have lower lexical scores despite being the
-    # same idea. Require substantial shared vocabulary in that case.
-    a_words = set(_normalize_caption_for_comparison(topic_a).split())
-    b_words = set(_normalize_caption_for_comparison(topic_b).split())
-
-    if len(a_words) >= 2 and len(b_words) >= 2:
-        shared = len(a_words & b_words)
-        return shared >= 2 and shared / min(len(a_words), len(b_words)) >= 0.75
-
-    return False
-
-
 def deduplicate_candidates(candidates):
 
     valid_candidates = []
@@ -592,17 +542,11 @@ def deduplicate_candidates(candidates):
         ):
             continue
 
-        if end <= start:
+        if not math.isfinite(start) or not math.isfinite(end) or end <= start:
             continue
 
-        duration = end - start
-
-        if duration < MIN_CLIP_LENGTH:
-            continue
-
-        if duration > MAX_CLIP_LENGTH:
-            continue
-
+        # Discovery is high-recall: let the editor repair candidate
+        # boundaries and enforce publishable duration in the next pass.
         valid_candidates.append({
             "start": start,
             "end": end,
@@ -655,7 +599,7 @@ def deduplicate_candidates(candidates):
 
             temporal_duplicate = (
                 shorter_duration > 0
-                and overlap / shorter_duration > 0.6
+                and overlap / shorter_duration > 0.8
             )
 
             # Only remove candidates with high timestamp overlap.
@@ -780,12 +724,12 @@ Do not shorten a good story just because it exceeds 90 seconds.
 80-89 = very strong
 70-79 = good and engaging
 60-69 = reasonably interesting / publishable
-50-59 = weak / marginal
-below 50 = poor / clearly unpublishable
+50-59 = marginal, but acceptable when the moment has a clear point of interest
+below 50 = weak / clearly unpublishable
 
-Score 60 and above is considered PUBLISHABLE (selected: true).
-When uncertain, prefer selecting the clip with a score >= 60.
-Reject (selected: false) ONLY if the clip is clearly weak (score < 60).
+Score 50 and above is considered PUBLISHABLE (selected: true).
+When uncertain, prefer selecting the clip with a score >= 50.
+Reject (selected: false) ONLY if the clip is clearly weak (score < 50).
 
 ## CANDIDATE
 
@@ -895,24 +839,28 @@ def refine_candidate(
 
         score = float(result.get("score", 0))
         reason = result.get("reason", "No reason provided")
-        selected = bool(result.get("selected", False))
-
-        if not selected:
-            return None, {"score": score, "reason": reason}
 
         start = float(result.get("start", 0))
         end = float(result.get("end", 0))
 
         duration = end - start
 
+        if not math.isfinite(score):
+            return None, {"score": 0, "reason": "LLM returned a non-finite score"}
+
+        # Use score as the selection gate; some providers contradict their
+        # selected flag even when the score meets the publishable threshold.
+        if score < MIN_SCORE:
+            return None, {"score": score, "reason": f"Score ({score:.0f}) below MIN_SCORE ({MIN_SCORE}) - {reason}"}
+
+        if not math.isfinite(start) or not math.isfinite(end) or end <= start:
+            return None, {"score": score, "reason": "LLM returned invalid clip timestamps"}
+
         if duration < MIN_CLIP_LENGTH:
             return None, {"score": score, "reason": f"Duration ({duration:.1f}s) shorter than MIN_CLIP_LENGTH ({MIN_CLIP_LENGTH}s)"}
 
         if duration > MAX_CLIP_LENGTH:
             return None, {"score": score, "reason": f"Duration ({duration:.1f}s) longer than MAX_CLIP_LENGTH ({MAX_CLIP_LENGTH}s)"}
-
-        if score < MIN_SCORE:
-            return None, {"score": score, "reason": f"Score ({score:.0f}) below MIN_SCORE ({MIN_SCORE}) - {reason}"}
 
         return {
             "start": start,
@@ -1041,32 +989,10 @@ def deduplicate_final_clips(clips):
 
             temporal_duplicate = (
                 shorter_duration > 0
-                and overlap / shorter_duration > 0.5
+                and overlap / shorter_duration > 0.8
             )
 
-            # Final clips have generated titles and, after the change in
-            # refine_candidate(), preserved candidate topics. Use both as
-            # semantic signals so near-duplicate clips can be removed even
-            # when their time ranges are different.
-            title_similarity = _text_similarity(
-                clip.get("title", ""),
-                existing.get("title", "")
-            )
-
-            topic_similarity = _text_similarity(
-                clip.get("topic", ""),
-                existing.get("topic", "")
-            )
-
-            semantic_duplicate = (
-                topic_similarity >= 0.72
-                or (
-                    title_similarity >= 0.78
-                    and topic_similarity >= 0.55
-                )
-            )
-
-            if temporal_duplicate or semantic_duplicate:
+            if temporal_duplicate:
                 duplicate = True
                 break
 
@@ -1341,9 +1267,7 @@ def generateTimestamps(id):
     # UPDATE PIPELINE STATUS
     # --------------------------------------------------------
 
-    metadata["pipeline"][
-        "transcript-analysed"
-    ] = True
+    metadata["pipeline"]["transcript-analysed"] = bool(final_clips)
 
     with open(
         str(metadata_path),
