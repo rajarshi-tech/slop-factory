@@ -311,6 +311,54 @@ export interface HealthResponse {
   status: string;
 }
 
+export interface RedditJob {
+  id: string;
+  title: string;
+  source_url: string | null;
+  subreddit: string | null;
+  job_status: string;
+  processing_state: string;
+  video_state: 'in_queue' | 'archived' | string;
+  progress: number;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RedditJobResponse {
+  job: RedditJob;
+  created?: boolean;
+}
+
+export interface RedditJobsResponse {
+  jobs: RedditJob[];
+  count: number;
+}
+
+export interface RedditProcessResult {
+  status: string;
+  video_url?: string;
+  error?: string;
+}
+
+export interface RedditProcessResponse {
+  results: Record<string, RedditProcessResult>;
+}
+
+export interface RedditMutationResponse {
+  status: string;
+  item_ids: string[];
+  archived_count?: number;
+  unarchived_count?: number;
+  deleted_count?: number;
+}
+
+export interface RedditBackgroundStatus {
+  configured: boolean;
+  filename: string | null;
+  size_bytes?: number;
+}
+
 /**
  * API Methods
  */
@@ -418,6 +466,56 @@ export const unarchiveJobs = async (videoIds: string[]): Promise<UnarchiveRespon
 
 export const deleteJobs = async (videoIds: string[]): Promise<DeleteJobsResponse> => {
   const response = await client.post('/api/jobs/delete', { video_ids: videoIds });
+  return response.data;
+};
+
+// Reddit pipeline
+export const getRedditJobs = async (): Promise<RedditJobsResponse> => {
+  const response = await client.get('/api/reddit');
+  return response.data;
+};
+
+export const createRedditJob = async (payload: {
+  text: string;
+  title?: string;
+  source_url?: string;
+  subreddit?: string;
+}): Promise<RedditJobResponse> => {
+  const response = await client.post('/api/reddit', payload);
+  return response.data;
+};
+
+export const processRedditItems = async (itemIds: string[]): Promise<RedditProcessResponse> => {
+  const response = await client.post('/api/reddit/process', { item_ids: itemIds });
+  return response.data;
+};
+
+export const archiveRedditItems = async (itemIds: string[]): Promise<RedditMutationResponse> => {
+  const response = await client.post('/api/reddit/archive', { item_ids: itemIds });
+  return response.data;
+};
+
+export const unarchiveRedditItems = async (itemIds: string[]): Promise<RedditMutationResponse> => {
+  const response = await client.post('/api/reddit/unarchive', { item_ids: itemIds });
+  return response.data;
+};
+
+export const deleteRedditItems = async (itemIds: string[]): Promise<RedditMutationResponse> => {
+  const response = await client.delete('/api/reddit', { data: { item_ids: itemIds } });
+  return response.data;
+};
+
+export const getRedditBackgroundVideo = async (): Promise<RedditBackgroundStatus> => {
+  const response = await client.get('/api/reddit/background-video');
+  return response.data;
+};
+
+export const uploadRedditBackgroundVideo = async (file: File): Promise<RedditBackgroundStatus> => {
+  const formData = new FormData();
+  formData.append('file', file);
+  const response = await client.post('/api/reddit/background-video', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
   return response.data;
 };
 

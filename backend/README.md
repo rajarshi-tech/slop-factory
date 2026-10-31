@@ -1,11 +1,12 @@
 # Slop Factory Backend
 
-FastAPI service for YouTube ingestion, trend scoring, media processing, and scheduled clip uploads.
+FastAPI service for YouTube ingestion, Reddit text-to-video processing, media processing, and scheduled clip uploads.
 
 ## Requirements
 
 - Python 3.11
 - FFmpeg on `PATH` for media processing
+- Coqui TTS for Reddit text-to-speech processing
 - A YouTube Data API v3 key for search and metadata ingestion
 - Optional Gemini API key for the Gemini provider
 - Optional Ollama installation for local LLM processing
@@ -55,6 +56,7 @@ python -m app.init_db
 - `/api/jobs` - direct URL ingestion, job listing, and archiving
 - `/api/trend` - trend score calculation for unranked jobs
 - `/api/process` - download, transcribe, and generate clips
+- `/api/reddit` - paste text into an independent queue, process selected items, and archive/delete them
 - `/api/uploads` - channel management and scheduled clip uploads
 - `/auth/youtube` - Google OAuth connection for upload channels
 - `/ws/jobs` - pull-based WebSocket snapshots of the job queue
@@ -69,3 +71,12 @@ python -m app.init_db
 5. Preview and create schedules through `/api/uploads/preview` and `/api/uploads`.
 
 The SQLite database is stored at `storage/youtube/database/job.db`. Per-video media and metadata are stored under `storage/youtube/content/{video_id}`.
+
+Reddit jobs use a separate database at `storage/reddit/database/job.db`. Pasted scripts and generated audio, subtitles, metadata, and videos are stored under `storage/reddit/content/{item_id}`. Upload an MP4 gameplay/background video to `POST /api/reddit/background-video` before processing Reddit items. Processing uses Coqui TTS and the existing WhisperX `large-v3` model configuration.
+
+Reddit workflow:
+
+1. `POST /api/reddit` with `{"text": "Your script", "title": "Optional title"}` to queue text without processing it.
+2. Upload an MP4 background once with `POST /api/reddit/background-video` (multipart field `file`).
+3. Process selected queue items with `POST /api/reddit/process` and `{"item_ids": ["..."]}`.
+4. Manage queue entries with `POST /api/reddit/archive`, `POST /api/reddit/unarchive`, or `DELETE /api/reddit` using `{"item_ids": ["..."]}`. The pull-based queue socket is `/api/reddit/ws`.
