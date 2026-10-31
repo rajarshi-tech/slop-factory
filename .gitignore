@@ -12,3 +12,5 @@ wheels/
 .env
 
 storage/youtube/*
+
+storage/reddit/*
