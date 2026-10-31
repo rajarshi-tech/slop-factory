@@ -341,6 +341,20 @@ export interface RedditProcessResult {
   error?: string;
 }
 
+export interface RedditSubtitleConfig {
+  enabled: boolean;
+  style: 'plain' | 'karaoke_sentence' | 'word_level';
+  font_name: string;
+  font_size: number;
+  highlight_color: string;
+  normal_color: string;
+  outline_color: string;
+  outline_width: number;
+  shadow: number;
+  bold: boolean;
+  position: 'center' | 'bottom_center' | 'bottom_center_up';
+}
+
 export interface RedditProcessResponse {
   results: Record<string, RedditProcessResult>;
 }
@@ -485,8 +499,14 @@ export const createRedditJob = async (payload: {
   return response.data;
 };
 
-export const processRedditItems = async (itemIds: string[]): Promise<RedditProcessResponse> => {
-  const response = await client.post('/api/reddit/process', { item_ids: itemIds });
+export const processRedditItems = async (
+  itemIds: string[],
+  subtitleConfig: RedditSubtitleConfig
+): Promise<RedditProcessResponse> => {
+  const response = await client.post('/api/reddit/process', {
+    item_ids: itemIds,
+    subtitle_config: subtitleConfig,
+  });
   return response.data;
 };
 

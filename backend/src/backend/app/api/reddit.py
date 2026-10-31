@@ -5,7 +5,7 @@ import shutil
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
@@ -30,6 +30,24 @@ class RedditIngestRequest(BaseModel):
 
 class ItemIdsRequest(BaseModel):
     item_ids: list[str] = Field(min_length=1)
+
+
+class RedditSubtitleConfig(BaseModel):
+    enabled: bool = True
+    style: Literal["plain", "karaoke_sentence", "word_level"] = "word_level"
+    font_name: str = Field(default="Arial", min_length=1, max_length=100, pattern=r"^[^,\r\n]+$")
+    font_size: int = Field(default=64, ge=12, le=200)
+    highlight_color: str = Field(default="&H00FFFF&", pattern=r"^&H(?:[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})&?$")
+    normal_color: str = Field(default="&HFFFFFF&", pattern=r"^&H(?:[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})&?$")
+    outline_color: str = Field(default="&H000000&", pattern=r"^&H(?:[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})&?$")
+    outline_width: float = Field(default=2, ge=0, le=10)
+    shadow: float = Field(default=1, ge=0, le=10)
+    bold: bool = True
+    position: Literal["center", "bottom_center", "bottom_center_up"] = "center"
+
+
+class RedditProcessRequest(ItemIdsRequest):
+    subtitle_config: RedditSubtitleConfig = Field(default_factory=RedditSubtitleConfig)
 
 
 def _validate_item_ids(item_ids: list[str]) -> list[str]:
@@ -155,8 +173,9 @@ async def upload_background_video(file: UploadFile = File(...)):
 
 
 @router.post("/process")
-def process_reddit_items(request: ItemIdsRequest):
+def process_reddit_items(request: RedditProcessRequest):
     item_ids = _validate_item_ids(request.item_ids)
+    subtitle_config = request.subtitle_config.model_dump()
     results = {}
     for item_id in item_ids:
         job = database.get_job(item_id)
@@ -166,16 +185,26 @@ def process_reddit_items(request: ItemIdsRequest):
         if job["video_state"] == "archived":
             results[item_id] = {"status": "failed", "error": "Archived items cannot be processed."}
             continue
-        if job["job_status"] in {"generating_audio", "transcribing", "generating_video"}:
+        if job["job_status"] in {
+            "loading_tts", "generating_audio", "loading_whisper",
+            "transcribing", "aligning", "generating_video",
+        }:
             results[item_id] = {"status": "failed", "error": "This item is already being processed."}
             continue
         if job["job_status"] == "completed":
-            results[item_id] = {"status": "already_processed"}
-            continue
+            metadata_path = _metadata_path(item_id)
+            output_path = reddit_item_dir(item_id) / f"{item_id}.mp4"
+            if metadata_path.is_file():
+                with metadata_path.open("r", encoding="utf-8") as file:
+                    metadata = json.load(file)
+                if metadata.get("subtitle_config") == subtitle_config and output_path.is_file():
+                    results[item_id] = {"status": "already_processed"}
+                    continue
 
         try:
-            results[item_id] = process_item(item_id)
+            results[item_id] = process_item(item_id, subtitle_config)
         except Exception as exc:
+            logger.exception("Reddit processing failed for item %s", item_id)
             database.update_job(
                 item_id,
                 job_status="failed",

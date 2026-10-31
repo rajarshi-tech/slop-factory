@@ -78,5 +78,8 @@ Reddit workflow:
 
 1. `POST /api/reddit` with `{"text": "Your script", "title": "Optional title"}` to queue text without processing it.
 2. Upload an MP4 background once with `POST /api/reddit/background-video` (multipart field `file`).
-3. Process selected queue items with `POST /api/reddit/process` and `{"item_ids": ["..."]}`.
+3. Process selected queue items with `POST /api/reddit/process`. The request may include a `subtitle_config` with `enabled`, `style` (`plain`, `karaoke_sentence`, or `word_level`), `font_name`, `font_size`, `normal_color`, `highlight_color`, `outline_color`, `outline_width`, `shadow`, `bold`, and `position`.
 4. Manage queue entries with `POST /api/reddit/archive`, `POST /api/reddit/unarchive`, or `DELETE /api/reddit` using `{"item_ids": ["..."]}`. The pull-based queue socket is `/api/reddit/ws`.
+5. Connect a YouTube channel, then use `POST /api/uploads/preview` and `POST /api/uploads` with the Reddit item ID in `video_ids` to preview and schedule its rendered MP4. A Reddit item is treated as one uploadable video.
+
+Reddit renders use the generated narration as their audio track and end when that narration finishes. Subtitle settings are saved with the rendered item; processing again with different settings re-renders the video.

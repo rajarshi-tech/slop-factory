@@ -4,16 +4,83 @@ import {
   WS_BASE_URL,
   archiveRedditItems,
   createRedditJob,
+  createScheduledUploads,
   deleteRedditItems,
+  getUploadChannels,
   getRedditBackgroundVideo,
   getRedditJobs,
   processRedditItems,
+  previewUploadSchedule,
   unarchiveRedditItems,
   uploadRedditBackgroundVideo,
 } from '../services/api';
-import type { RedditBackgroundStatus, RedditJob } from '../services/api';
+import type {
+  RedditBackgroundStatus,
+  RedditJob,
+  RedditSubtitleConfig,
+  UploadChannel,
+  UploadScheduleRequest,
+} from '../services/api';
 
 type QueueFilter = 'active' | 'archived';
+const PROCESSING_STATES = [
+  'loading_tts',
+  'generating_audio',
+  'loading_whisper',
+  'transcribing',
+  'aligning',
+  'generating_video',
+];
+const STATUS_LABELS: Record<string, string> = {
+  loading_tts: 'Loading TTS model',
+  generating_audio: 'Generating narration',
+  loading_whisper: 'Loading WhisperX',
+  transcribing: 'Transcribing narration',
+  aligning: 'Aligning subtitles',
+  generating_video: 'Rendering video',
+};
+const DEFAULT_REDDIT_SUBTITLE_CONFIG: RedditSubtitleConfig = {
+  enabled: true,
+  style: 'word_level',
+  font_name: 'Arial',
+  font_size: 64,
+  highlight_color: '&H00FFFF&',
+  normal_color: '&HFFFFFF&',
+  outline_color: '&H000000&',
+  outline_width: 2,
+  shadow: 1,
+  bold: true,
+  position: 'center',
+};
+
+function loadSubtitleConfig(): RedditSubtitleConfig {
+  try {
+    const saved = localStorage.getItem('slop_factory_reddit_subtitle_config');
+    return saved
+      ? { ...DEFAULT_REDDIT_SUBTITLE_CONFIG, ...(JSON.parse(saved) as Partial<RedditSubtitleConfig>) }
+      : DEFAULT_REDDIT_SUBTITLE_CONFIG;
+  } catch {
+    return DEFAULT_REDDIT_SUBTITLE_CONFIG;
+  }
+}
+
+function tomorrowDate(): string {
+  const date = new Date();
+  date.setDate(date.getDate() + 1);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function assColorToHex(color: string): string {
+  const match = color.match(/^&H(?:[0-9A-Fa-f]{2})?([0-9A-Fa-f]{6})&?$/);
+  if (!match) return '#ffffff';
+  const value = match[1];
+  return `#${value.slice(4, 6)}${value.slice(2, 4)}${value.slice(0, 2)}`;
+}
+
+function hexToAssColor(color: string): string {
+  const value = color.replace('#', '');
+  return `&H00${value.slice(4, 6)}${value.slice(2, 4)}${value.slice(0, 2)}&`;
+}
 
 function errorMessage(error: unknown): string {
   if (typeof error === 'object' && error !== null && 'response' in error) {
@@ -37,14 +104,14 @@ function formatDate(value: string): string {
 function statusStyle(status: string): string {
   if (status === 'completed') return 'border-emerald-400/20 bg-emerald-400/10 text-emerald-300';
   if (status === 'failed') return 'border-rose-400/20 bg-rose-400/10 text-rose-300';
-  if (['generating_audio', 'transcribing', 'generating_video'].includes(status)) {
+  if (PROCESSING_STATES.includes(status)) {
     return 'border-orange-400/20 bg-orange-400/10 text-orange-200';
   }
   return 'border-slate-700 bg-slate-800/80 text-slate-300';
 }
 
 function statusLabel(status: string): string {
-  return status.replaceAll('_', ' ');
+  return STATUS_LABELS[status] ?? status.replaceAll('_', ' ');
 }
 
 function Icon({ name, className = 'h-5 w-5' }: { name: 'reddit' | 'spark' | 'upload' | 'play' | 'archive' | 'restore' | 'trash' | 'refresh' | 'check' | 'video' | 'clock'; className?: string }) {
@@ -77,6 +144,16 @@ export function RedditSection() {
   const [title, setTitle] = useState('');
   const [subreddit, setSubreddit] = useState('');
   const [sourceUrl, setSourceUrl] = useState('');
+  const [subtitleConfig, setSubtitleConfig] = useState<RedditSubtitleConfig>(loadSubtitleConfig);
+  const [uploadTarget, setUploadTarget] = useState<string | null>(null);
+  const [uploadChannels, setUploadChannels] = useState<UploadChannel[]>([]);
+  const [uploadChannelId, setUploadChannelId] = useState('');
+  const [publishDate, setPublishDate] = useState(tomorrowDate);
+  const [publishTime, setPublishTime] = useState('12:00');
+  const [publishTimezone, setPublishTimezone] = useState(
+    () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+  );
+  const [scheduling, setScheduling] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -116,7 +193,7 @@ export function RedditSection() {
     }, 0);
     const interval = window.setInterval(() => {
       void refreshJobs();
-    }, 12000);
+    }, 15000);
     let reconnectTimer: number | undefined;
     let heartbeat: number | undefined;
     let disposed = false;
@@ -128,7 +205,7 @@ export function RedditSection() {
         socket.send('refresh');
         heartbeat = window.setInterval(() => {
           if (socket.readyState === WebSocket.OPEN) socket.send('refresh');
-        }, 12000);
+        }, 3000);
       };
       socket.onmessage = (event: MessageEvent<string>) => {
         try {
@@ -158,7 +235,7 @@ export function RedditSection() {
 
   const activeJobs = useMemo(() => jobs.filter((job) => job.video_state !== 'archived'), [jobs]);
   const archivedJobs = useMemo(() => jobs.filter((job) => job.video_state === 'archived'), [jobs]);
-  const processingCount = activeJobs.filter((job) => ['generating_audio', 'transcribing', 'generating_video'].includes(job.job_status)).length;
+  const processingCount = activeJobs.filter((job) => PROCESSING_STATES.includes(job.job_status)).length;
   const completedCount = activeJobs.filter((job) => job.job_status === 'completed').length;
   const visibleJobs = useMemo(() => {
     const source = queueFilter === 'archived' ? archivedJobs : activeJobs;
@@ -170,10 +247,10 @@ export function RedditSection() {
   }, [activeJobs, archivedJobs, queueFilter, search]);
   const selectableJobs = visibleJobs.filter((job) => (
     queueFilter === 'active'
-    && !['generating_audio', 'transcribing', 'generating_video'].includes(job.job_status)
+    && !PROCESSING_STATES.includes(job.job_status)
   ));
   const processableIds = [...selectedIds].filter((id) => (
-    selectableJobs.some((job) => job.id === id && job.job_status !== 'completed')
+    selectableJobs.some((job) => job.id === id)
   ));
   const allSelected = selectableJobs.length > 0 && selectableJobs.every((job) => selectedIds.has(job.id));
 
@@ -225,7 +302,8 @@ export function RedditSection() {
     setError(null);
     setNotice(null);
     try {
-      const response = await processRedditItems(ids);
+      localStorage.setItem('slop_factory_reddit_subtitle_config', JSON.stringify(subtitleConfig));
+      const response = await processRedditItems(ids, subtitleConfig);
       const results = Object.values(response.results);
       const complete = results.filter((result) => result.status === 'processed' || result.status === 'already_processed').length;
       const failed = results.filter((result) => result.status === 'failed');
@@ -237,6 +315,52 @@ export function RedditSection() {
       setError(errorMessage(requestError));
     } finally {
       setProcessing(false);
+    }
+  };
+
+  const handleOpenUpload = async (job: RedditJob) => {
+    if (uploadTarget === job.id) {
+      setUploadTarget(null);
+      return;
+    }
+    setError(null);
+    try {
+      const response = await getUploadChannels();
+      if (response.channels.length === 0) {
+        setError('Connect a YouTube channel before scheduling Reddit videos.');
+        return;
+      }
+      setUploadChannels(response.channels);
+      setUploadChannelId(response.channels[0].id);
+      setPublishDate(tomorrowDate());
+      setUploadTarget(job.id);
+    } catch (requestError) {
+      setError(errorMessage(requestError));
+    }
+  };
+
+  const handleScheduleUpload = async (event: FormEvent<HTMLFormElement>, job: RedditJob) => {
+    event.preventDefault();
+    setScheduling(true);
+    setError(null);
+    setNotice(null);
+    const request: UploadScheduleRequest = {
+      video_ids: [job.id],
+      channel_id: uploadChannelId,
+      videos_per_day: 1,
+      start_date: publishDate,
+      start_time: publishTime,
+      timezone: publishTimezone,
+    };
+    try {
+      const preview = await previewUploadSchedule(request);
+      await createScheduledUploads(request);
+      setNotice(`Scheduled “${job.title}” for ${new Date(preview.schedule[0].display_publish_at).toLocaleString()}.`);
+      setUploadTarget(null);
+    } catch (requestError) {
+      setError(errorMessage(requestError));
+    } finally {
+      setScheduling(false);
     }
   };
 
@@ -371,6 +495,121 @@ export function RedditSection() {
                 className="mt-4 max-h-40 w-full rounded-xl border border-white/10 bg-black object-cover"
               />
             )}
+            <details className="mt-5 border-t border-white/10 pt-4">
+              <summary className="cursor-pointer text-xs font-semibold text-slate-300">Subtitle style and appearance</summary>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <label className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-2.5 text-xs text-slate-300">
+                  Subtitles enabled
+                  <input
+                    type="checkbox"
+                    checked={subtitleConfig.enabled}
+                    onChange={(event) => setSubtitleConfig((current) => ({ ...current, enabled: event.target.checked }))}
+                    className="h-4 w-4 accent-orange-400"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-[11px] text-slate-500">
+                  Subtitle style
+                  <select
+                    value={subtitleConfig.style}
+                    onChange={(event) => setSubtitleConfig((current) => ({ ...current, style: event.target.value as RedditSubtitleConfig['style'] }))}
+                    disabled={!subtitleConfig.enabled}
+                    className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-200 disabled:opacity-40"
+                  >
+                    <option value="plain">Plain</option>
+                    <option value="karaoke_sentence">Karaoke sentence</option>
+                    <option value="word_level">Word level</option>
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1 text-[11px] text-slate-500">
+                  Position
+                  <select
+                    value={subtitleConfig.position}
+                    onChange={(event) => setSubtitleConfig((current) => ({ ...current, position: event.target.value as RedditSubtitleConfig['position'] }))}
+                    disabled={!subtitleConfig.enabled}
+                    className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-200 disabled:opacity-40"
+                  >
+                    <option value="center">Center</option>
+                    <option value="bottom_center">Bottom center</option>
+                    <option value="bottom_center_up">Bottom center (raised)</option>
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1 text-[11px] text-slate-500">
+                  Font family
+                  <input
+                    value={subtitleConfig.font_name}
+                    maxLength={100}
+                    onChange={(event) => setSubtitleConfig((current) => ({ ...current, font_name: event.target.value }))}
+                    disabled={!subtitleConfig.enabled}
+                    className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-200 disabled:opacity-40"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-[11px] text-slate-500">
+                  Font size
+                  <input
+                    type="number"
+                    min={12}
+                    max={200}
+                    value={subtitleConfig.font_size}
+                    onChange={(event) => setSubtitleConfig((current) => ({ ...current, font_size: Number(event.target.value) || 64 }))}
+                    disabled={!subtitleConfig.enabled}
+                    className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-200 disabled:opacity-40"
+                  />
+                </label>
+                {([
+                  ['normal_color', 'Font color'],
+                  ['highlight_color', 'Highlight color'],
+                  ['outline_color', 'Outline color'],
+                ] as const).map(([field, label]) => (
+                  <label key={field} className="flex items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-2 text-[11px] text-slate-400">
+                    {label}
+                    <input
+                      type="color"
+                      value={assColorToHex(subtitleConfig[field])}
+                      onChange={(event) => setSubtitleConfig((current) => ({ ...current, [field]: hexToAssColor(event.target.value) }))}
+                      disabled={!subtitleConfig.enabled}
+                      className="h-7 w-10 cursor-pointer rounded border-0 bg-transparent disabled:opacity-40"
+                    />
+                  </label>
+                ))}
+                <label className="flex flex-col gap-1 text-[11px] text-slate-500">
+                  Outline width
+                  <input
+                    type="number"
+                    min={0}
+                    max={10}
+                    step={0.5}
+                    value={subtitleConfig.outline_width}
+                    onChange={(event) => setSubtitleConfig((current) => ({ ...current, outline_width: Number(event.target.value) || 0 }))}
+                    disabled={!subtitleConfig.enabled}
+                    className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-200 disabled:opacity-40"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-[11px] text-slate-500">
+                  Shadow
+                  <input
+                    type="number"
+                    min={0}
+                    max={10}
+                    step={0.5}
+                    value={subtitleConfig.shadow}
+                    onChange={(event) => setSubtitleConfig((current) => ({ ...current, shadow: Number(event.target.value) || 0 }))}
+                    disabled={!subtitleConfig.enabled}
+                    className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-200 disabled:opacity-40"
+                  />
+                </label>
+                <label className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-950/60 px-3 py-2.5 text-xs text-slate-300">
+                  Bold font
+                  <input
+                    type="checkbox"
+                    checked={subtitleConfig.bold}
+                    onChange={(event) => setSubtitleConfig((current) => ({ ...current, bold: event.target.checked }))}
+                    disabled={!subtitleConfig.enabled}
+                    className="h-4 w-4 accent-orange-400 disabled:opacity-40"
+                  />
+                </label>
+                <p className="sm:col-span-2 text-[10px] text-slate-600">These settings apply when you render a story. Colors are saved as ASS subtitles and the generated MP4 can be re-rendered with new settings.</p>
+              </div>
+            </details>
           </div>
         </div>
       </section>
@@ -507,7 +746,7 @@ export function RedditSection() {
                 <p className="mt-1 max-w-xs text-xs leading-5 text-slate-500">{search ? 'Try another title, subreddit, or link.' : queueFilter === 'archived' ? 'Archived stories will stay here until you restore or delete them.' : 'Paste a story to collect it here. It won’t process until you choose it.'}</p>
               </div>
             ) : visibleJobs.map((job) => {
-              const isProcessing = ['generating_audio', 'transcribing', 'generating_video'].includes(job.job_status);
+              const isProcessing = PROCESSING_STATES.includes(job.job_status);
               const canSelect = queueFilter === 'active' && !isProcessing;
               return (
                 <article key={job.id} className="group flex gap-3 py-4">
@@ -536,7 +775,49 @@ export function RedditSection() {
                     )}
                     {job.error_message && <p className="mt-2 line-clamp-2 text-xs text-rose-300">{job.error_message}</p>}
                     {job.job_status === 'completed' && (
-                      <a href={`${API_BASE_URL}/storage/reddit/content/${job.id}/${job.id}.mp4`} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-300 hover:text-emerald-200"><Icon name="video" className="h-3.5 w-3.5" /> Preview generated video ↗</a>
+                      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2">
+                        <a href={`${API_BASE_URL}/storage/reddit/content/${job.id}/${job.id}.mp4`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-300 hover:text-emerald-200"><Icon name="video" className="h-3.5 w-3.5" /> Preview generated video ↗</a>
+                        {queueFilter === 'active' && (
+                          <button
+                            type="button"
+                            onClick={() => void handleOpenUpload(job)}
+                            className="inline-flex items-center gap-1.5 text-xs font-semibold text-sky-300 hover:text-sky-200"
+                          >
+                            <Icon name="upload" className="h-3.5 w-3.5" />
+                            {uploadTarget === job.id ? 'Close YouTube schedule' : 'Schedule YouTube upload'}
+                          </button>
+                        )}
+                      </div>
+                    )}
+                    {uploadTarget === job.id && job.job_status === 'completed' && (
+                      <form onSubmit={(event) => void handleScheduleUpload(event, job)} className="mt-3 grid gap-2 rounded-xl border border-sky-400/15 bg-sky-400/[0.04] p-3 sm:grid-cols-2">
+                        <label className="flex flex-col gap-1 text-[10px] font-medium text-slate-500 sm:col-span-2">
+                          YouTube channel
+                          <select
+                            required
+                            value={uploadChannelId}
+                            onChange={(event) => setUploadChannelId(event.target.value)}
+                            className="rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-2 text-xs text-slate-200"
+                          >
+                            {uploadChannels.map((channel) => <option key={channel.id} value={channel.id}>{channel.name}</option>)}
+                          </select>
+                        </label>
+                        <label className="flex flex-col gap-1 text-[10px] font-medium text-slate-500">
+                          Publish date
+                          <input required type="date" min={tomorrowDate()} value={publishDate} onChange={(event) => setPublishDate(event.target.value)} className="rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-2 text-xs text-slate-200" />
+                        </label>
+                        <label className="flex flex-col gap-1 text-[10px] font-medium text-slate-500">
+                          Publish time
+                          <input required type="time" value={publishTime} onChange={(event) => setPublishTime(event.target.value)} className="rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-2 text-xs text-slate-200" />
+                        </label>
+                        <label className="flex flex-col gap-1 text-[10px] font-medium text-slate-500 sm:col-span-2">
+                          Time zone
+                          <input required value={publishTimezone} onChange={(event) => setPublishTimezone(event.target.value)} placeholder="Asia/Kolkata" className="rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-2 text-xs text-slate-200" />
+                        </label>
+                        <button type="submit" disabled={scheduling || !uploadChannelId} className="rounded-lg bg-sky-400 px-3 py-2 text-xs font-bold text-slate-950 hover:bg-sky-300 disabled:opacity-50 sm:col-span-2">
+                          {scheduling ? 'Scheduling…' : 'Schedule upload'}
+                        </button>
+                      </form>
                     )}
                   </div>
                   <div className="flex shrink-0 items-start gap-1 opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100">

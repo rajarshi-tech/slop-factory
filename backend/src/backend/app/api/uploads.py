@@ -1,4 +1,4 @@
-"""Scheduled YouTube uploads for generated clips and connected OAuth channels."""
+"""Scheduled YouTube uploads for generated videos, clips, and connected OAuth channels."""
 
 import json
 from datetime import datetime, time, timedelta, timezone
@@ -20,7 +20,9 @@ from app.init_db import (
     update_upload_job,
 )
 from app.services.youtube import upload_scheduled_video
-from app.utils.storage import youtube_video_dir
+from app.pipeline.reddit.database import archive_jobs as archive_reddit_jobs
+from app.pipeline.reddit.database import get_job as get_reddit_job
+from app.utils.storage import reddit_item_dir, youtube_video_dir
 
 router = APIRouter()
 
@@ -91,44 +93,76 @@ def _collect_clips(
     clips = []
     for video_id in video_ids:
         job = get_job(video_id)
-        if not job or job.get("processing_state") != "processed" or job.get("video_state") == "archived":
+        if job:
+            if job.get("processing_state") != "processed" or job.get("video_state") == "archived":
+                raise HTTPException(status_code=400, detail=f"{video_id} is not an available processed video.")
+            video_dir = youtube_video_dir(video_id)
+            clips_dir = video_dir / "clips"
+            timestamps = []
+            timestamps_file = video_dir / "clipTimestamps.json"
+            if timestamps_file.exists():
+                try:
+                    timestamps = json.loads(timestamps_file.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    timestamps = []
+
+            paths = sorted(clips_dir.glob("*.mp4")) if clips_dir.exists() else []
+            for index, path in enumerate(paths):
+                metadata = timestamps[index] if index < len(timestamps) and isinstance(timestamps[index], dict) else {}
+                clip_id = f"{video_id}_{index + 1}"
+                override = overrides.get(clip_id) or {}
+
+                title = override.get("title")
+                if not title or not str(title).strip():
+                    title = str(metadata.get("title") or path.stem)[:100]
+                else:
+                    title = str(title).strip()[:100]
+
+                description = override.get("description")
+                if description is None:
+                    description = default_description or str(metadata.get("description") or "")
+                    description = str(description).strip()
+
+                clips.append({
+                    "source_video_id": video_id,
+                    "clip_id": clip_id,
+                    "clip_filename": path.name,
+                    "clip_path": str(path),
+                    "title": title,
+                    "description": description,
+                })
+            continue
+
+        reddit_job = get_reddit_job(video_id)
+        if (
+            not reddit_job
+            or reddit_job.get("processing_state") != "processed"
+            or reddit_job.get("video_state") == "archived"
+        ):
             raise HTTPException(status_code=400, detail=f"{video_id} is not an available processed video.")
-
-        video_dir = youtube_video_dir(video_id)
-        timestamps = []
-        timestamps_file = video_dir / "clipTimestamps.json"
-        if timestamps_file.exists():
-            try:
-                timestamps = json.loads(timestamps_file.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                timestamps = []
-
-        for index, path in enumerate(sorted((video_dir / "clips").glob("*.mp4")) if (video_dir / "clips").exists() else []):
-            metadata = timestamps[index] if index < len(timestamps) and isinstance(timestamps[index], dict) else {}
-            clip_id = f"{video_id}_{index + 1}"
-            override = overrides.get(clip_id) or {}
-
-            title = override.get("title")
-            if not title or not str(title).strip():
-                title = str(metadata.get("title") or path.stem)[:100]
-            else:
-                title = str(title).strip()[:100]
-
-            description = override.get("description")
-            if description is None:
-                description = default_description or str(metadata.get("description") or "")
-                description = str(description).strip()
-
-            clips.append({
-                "source_video_id": video_id,
-                "clip_id": clip_id,
-                "clip_filename": path.name,
-                "clip_path": str(path),
-                "title": title,
-                "description": description,
-            })
+        path = reddit_item_dir(video_id) / f"{video_id}.mp4"
+        if not path.is_file():
+            raise HTTPException(status_code=400, detail=f"{video_id} has no generated Reddit video to upload.")
+        clip_id = f"{video_id}_1"
+        override = overrides.get(clip_id) or {}
+        title = override.get("title")
+        if not title or not str(title).strip():
+            title = str(reddit_job.get("title") or path.stem)[:100]
+        else:
+            title = str(title).strip()[:100]
+        description = override.get("description")
+        if description is None:
+            description = default_description
+        clips.append({
+            "source_video_id": video_id,
+            "clip_id": clip_id,
+            "clip_filename": path.name,
+            "clip_path": str(path),
+            "title": title,
+            "description": str(description).strip(),
+        })
     if not clips:
-        raise HTTPException(status_code=400, detail="The selected processed videos do not contain generated clip files.")
+        raise HTTPException(status_code=400, detail="The selected processed videos do not contain generated upload files.")
     return clips
 
 
@@ -164,6 +198,22 @@ def _build_schedule(request: UploadScheduleRequest) -> List[dict]:
 
 def _check_and_archive_source_video(source_video_id: str) -> bool:
     """If all generated clips of a source video have been successfully uploaded, archive it."""
+    if not get_job(source_video_id):
+        reddit_job = get_reddit_job(source_video_id)
+        if not reddit_job:
+            return False
+        video_path = reddit_item_dir(source_video_id) / f"{source_video_id}.mp4"
+        if not video_path.is_file():
+            return False
+        upload_jobs = get_upload_jobs([source_video_id])
+        if any(
+            job.get("clip_filename") == video_path.name and job.get("upload_status") == "uploaded"
+            for job in upload_jobs
+        ):
+            archive_reddit_jobs([source_video_id])
+            return True
+        return False
+
     video_dir = youtube_video_dir(source_video_id)
     clips_dir = video_dir / "clips"
     if not clips_dir.exists():
@@ -246,4 +296,3 @@ def create_scheduled_uploads(request: UploadScheduleRequest, background_tasks: B
         "upload_jobs": created,
         "message": f"Created and started {len(created)} scheduled YouTube upload job(s).",
     }
-
