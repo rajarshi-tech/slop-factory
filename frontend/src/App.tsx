@@ -9,6 +9,7 @@ import { ArchivedSection } from './components/ArchivedSection';
 import ConfigSection from './components/ConfigSection';
 import ParamControls from './components/ParamControls';
 import { YoutubeChannelsSection } from './components/YoutubeChannelsSection';
+import { RedditSection } from './components/RedditSection';
 import {
   getConfig,
   updateSearchParams,
@@ -52,6 +53,7 @@ function App() {
   const [isWsConnected, setIsWsConnected] = useState<boolean>(false);
 
   const wsRef = useRef<WebSocket | null>(null);
+  const wsReconnectRef = useRef<number | null>(null);
 
   /**
    * Fetch all initial data
@@ -87,47 +89,52 @@ function App() {
    * Set up WebSocket connection for live job streaming
    */
   const connectWebSocket = useCallback(() => {
-    try {
-      const socket = new WebSocket(`${WS_BASE_URL}/ws/jobs`);
+    function connect() {
+      try {
+        const socket = new WebSocket(`${WS_BASE_URL}/ws/jobs`);
 
-      socket.onopen = () => {
-        setIsWsConnected(true);
-        // Send initial heartbeat to request jobs
-        socket.send('ping');
-      };
+        socket.onopen = () => {
+          setIsWsConnected(true);
+          // Send initial heartbeat to request jobs
+          socket.send('ping');
+        };
 
-      socket.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          if (data && Array.isArray(data.jobs)) {
-            setJobs(data.jobs);
+        socket.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            if (data && Array.isArray(data.jobs)) {
+              setJobs(data.jobs);
+            }
+          } catch (err) {
+            console.error('Error parsing WebSocket data:', err);
           }
-        } catch (err) {
-          console.error('Error parsing WebSocket data:', err);
-        }
-      };
+        };
 
-      socket.onerror = () => {
+        socket.onerror = () => {
+          setIsWsConnected(false);
+        };
+
+        socket.onclose = () => {
+          setIsWsConnected(false);
+          // Try reconnecting after 5 seconds
+          if (wsRef.current === socket) {
+            wsReconnectRef.current = window.setTimeout(connect, 5000);
+          }
+        };
+
+        wsRef.current = socket;
+      } catch {
         setIsWsConnected(false);
-      };
-
-      socket.onclose = () => {
-        setIsWsConnected(false);
-        // Try reconnecting after 5 seconds
-        setTimeout(() => {
-          connectWebSocket();
-        }, 5000);
-      };
-
-      wsRef.current = socket;
-    } catch {
-      setIsWsConnected(false);
+      }
     }
+    connect();
   }, []);
 
   useEffect(() => {
-    loadData();
-    connectWebSocket();
+    const initialLoad = window.setTimeout(() => {
+      void loadData();
+      connectWebSocket();
+    }, 0);
 
     // Polling fallback
     const interval = setInterval(() => {
@@ -135,10 +142,13 @@ function App() {
     }, 15000);
 
     return () => {
+      window.clearTimeout(initialLoad);
       clearInterval(interval);
-      if (wsRef.current) {
-        wsRef.current.close();
-      }
+      if (wsReconnectRef.current !== null) window.clearTimeout(wsReconnectRef.current);
+      wsReconnectRef.current = null;
+      const socket = wsRef.current;
+      wsRef.current = null;
+      socket?.close();
     };
   }, [loadData, connectWebSocket]);
 
@@ -212,6 +222,8 @@ function App() {
             </div>
           </div>
         )}
+
+        {activeTab === 'reddit' && <RedditSection />}
 
         {/* TAB 2: TREND CALCULATOR */}
         {activeTab === 'trend' && (

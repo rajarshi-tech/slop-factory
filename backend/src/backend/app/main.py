@@ -2,8 +2,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.api import config, jobs, process, search, trend, uploads, youtube_auth
+from app.api import config, jobs, process, reddit, search, trend, uploads, youtube_auth
 from app.init_db import create_tables
+from app.pipeline.reddit.database import create_tables as create_reddit_tables
 from app.utils.storage import STORAGE
 
 
@@ -17,6 +18,7 @@ app = FastAPI(
 def initialize_database():
     """Apply additive SQLite schema changes before accepting requests."""
     create_tables()
+    create_reddit_tables()
 
 
 # ---------------------------------------------------------
@@ -80,6 +82,12 @@ app.include_router(
     process.router,
     prefix="/api/process",
     tags=["Process"],
+)
+
+app.include_router(
+    reddit.router,
+    prefix="/api/reddit",
+    tags=["Reddit"],
 )
 
 app.include_router(

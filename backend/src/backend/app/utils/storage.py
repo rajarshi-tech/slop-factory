@@ -205,6 +205,27 @@ def youtube_database_dir():
     return path
 
 
+def reddit_item_dir(item_id: str):
+    """Storage directory for a Reddit item: storage/reddit/content/{item_id}/"""
+    path = STORAGE / "reddit" / "content" / item_id
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def reddit_assets_dir():
+    """Storage directory for shared Reddit pipeline assets."""
+    path = STORAGE / "reddit" / "assets"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def reddit_database_dir():
+    """Storage directory for the Reddit pipeline database."""
+    path = STORAGE / "reddit" / "database"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def save_config(config: dict):
     """Atomically save configuration to config.json with thread locking."""
     config_dir = youtube_config_dir()
